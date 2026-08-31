@@ -1,0 +1,48 @@
+# Frozen PDFNest Baseline
+
+This SDK copy was taken from the following PDFNest source state on 2026-08-31:
+
+- worker revision: `b02d48cc57cac581b40d27519aeee4db5134c61b`;
+- root revision: `0cf2cf707bdf366dddab2a718bbb72ba6bfe4b1c`;
+- engine boundary: `pdfnest-worker/app/core/ocr_v2/`;
+- internal worker tree was clean at freeze;
+- PDFNest continues to use the internal modules.
+
+The current scanned Markdown status remains:
+
+`PDF_TO_MARKDOWN_SCANNED_STRUCTURE_LOCAL_CONDITIONAL`
+
+This extraction does not improve or reclassify that behavior.
+
+## Major source hashes
+
+The following SHA-256 values were captured from the frozen worker source before
+the standalone copy was isolated:
+
+```text
+app/core/ocr_v2/__init__.py cc98f44163521c6e0749261fa5883c0f56372bf08a924538378079dc219a171e
+app/core/ocr_v2/adapters/__init__.py 169d24568f82752ab3be6863f9157133b2887677ea5e3c4ba4692d5847921f3b
+app/core/ocr_v2/adapters/base.py 681a1d9c438fccf889ebc2589cf65dce1547aacd4c2c6f96b8f1b887d6b4f926
+app/core/ocr_v2/adapters/ppocrv6_medium.py 9e511377f724fa2e9962b50a41c5de2df259de4af21de3332085e3041935bcf7
+app/core/ocr_v2/adapters/structured_slot.py 647724aa7f80b08eb35bf150f39078fe3a7be8358589d0c74a0e221f26ea0034
+app/core/ocr_v2/adapters/tesseract.py 26056706ed535b2f09d5d9844922e7192e5945600c4c792fb7af6ae22cfd0e5f
+app/core/ocr_v2/contracts.py 09e02f5bb35d9413ba213e33bda13c4a3dd34acfe04acb984c9d1407e01d69ef
+app/core/ocr_v2/diagnostics.py d94336df4f0fb66753758eb1d2abc4258ed312d31712cf68c6dcb39a9b363e6f
+app/core/ocr_v2/errors.py 960603906918dd55067d30ac6e57ffe6c2747ba5cfd19b5b2d9feac02dd36796
+app/core/ocr_v2/geometry.py 07521c60cd40ad7ff1209b7742f2e1a7934a14fe111ce5049574bf0953c3f9dc
+app/core/ocr_v2/image_pages.py 5598b9969f36a30c385a4a3cb39431d3897b873477c406b77037610495d6ed64
+app/core/ocr_v2/language_policy.py 4db4dba66db6a900d486d3f9100f0884b69a911bc88b9cd7a824387cfb873534
+app/core/ocr_v2/markup.py 02da926fcfa9f780572957b581e00408731b67a3b4f636e01e6d2763bfda3e33
+app/core/ocr_v2/native.py 78f46de47787614b0eeecdd30d32d4276a0b36eb7c0497609c9b56bb28078fe8
+app/core/ocr_v2/normalization.py 7364e1d08830c8534dfbed17e10ab27c4d27d0da4c187ec384435fa99bc0b802
+app/core/ocr_v2/orchestration.py 9f10497fa5840fcd01f7bc4252009d36113b8752d9521134f81365bd3a376364
+app/core/ocr_v2/profiles.py 7a71c0c9773fe56f2b0122cd8d5b8ac70aa6b5dd23470a2eed6cf4b9808d78c8
+app/core/ocr_v2/renderers/__init__.py 7149e178ef4c8fdec45b0033b983b2ba84c5a125275cd753e16b8176a1fead46
+app/core/ocr_v2/renderers/searchable_pdf.py 5381d9a2923c25965cf62a52f379d6f45ae8f088b1a733e0a7f62d7961dc94c9
+app/core/ocr_v2/renderers/text.py f8554b604a405c7b57dcfc6513d901dfec9b60e708c3b9936844575e5899002a
+app/core/ocr_v2/renderers/validation.py 1238fae1dd43a060d909f7daad6597ac9ee412f39f2289172fd63c4d17ad7def
+app/core/ocr_v2/routing.py e79378fdd0b1c1026c6f9ddcc389fc7a2121922438fd3804ff84a6f838298e6c
+app/core/ocr_v2/structured.py b46edefab8ebd21d72ed71db5b89df50aa349b083cc9605e8cdd3891ad88a98d
+app/core/ocr_v2/telemetry.py b9c055340dbd31ec757c5910a1586fb52de06fe34c415fb350ff98ee1c23b483
+app/core/ocr_v2/validation.py c1b8c448073c95915e7f9c970d09bb53b888a9fa7fbddda10a8f3451e1ca9f40
+```
