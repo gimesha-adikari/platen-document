@@ -5,13 +5,14 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Mapping, Sequence
+from typing import Callable, Mapping, Sequence
 
 from ..diagnostics.doctor import build_doctor_report
 from ..engine.adapters import PPOCRv6MediumAdapter, TesseractAdapter
 from ..engine.geometry import RasterPreparer
 from ..engine.orchestration import OCRV2Worker
 from ..engine.renderers import SearchablePdfRenderer, TextRenderer
+from ..engine.routing import RoutePolicy
 from ..engine.structured import (
     StructuredDocumentProcessor,
     StructuredDocumentResult,
@@ -80,6 +81,17 @@ def _optional_positive_int(raw: str | None) -> int | None:
     return value if value > 0 else None
 
 
+def _route_policy(value: str | object | None) -> RoutePolicy:
+    """Translate the PDFNest-facing routing name to the copied engine policy."""
+    raw = getattr(value, "value", value)
+    normalized = str(raw or "AUTO").strip().upper()
+    if normalized in {"FAST", "LANGUAGE_FALLBACK"}:
+        return RoutePolicy(preferred_engine="tesseract_v2", fallback_engine="tesseract_v2")
+    if normalized in {"AUTO", "QUALITY", "GEOMETRY"}:
+        return RoutePolicy(preferred_engine="ppocrv6_medium_v2", fallback_engine="tesseract_v2")
+    raise ValueError(f"unsupported OCR routing policy: {normalized}")
+
+
 class DocumentProcessor:
     """Process local PDF files without PDFNest application infrastructure."""
 
@@ -95,7 +107,7 @@ class DocumentProcessor:
         self._text_renderer = TextRenderer()
         self._searchable_pdf_renderer = SearchablePdfRenderer()
 
-    def _make_worker(self, max_raster_pixels: int | None) -> OCRV2Worker:
+    def _make_worker(self, max_raster_pixels: int | None, routing_policy: str = "AUTO") -> OCRV2Worker:
         tesseract = TesseractAdapter(
             "eng",
             timeout=self.config.tesseract_timeout,
@@ -108,6 +120,7 @@ class DocumentProcessor:
                 "ppocrv6_medium_v2": PPOCRv6MediumAdapter(),
             },
             raster_preparer=RasterPreparer(self.config.raster_dpi),
+            route_policy=_route_policy(routing_policy),
             max_raster_pixels=max_raster_pixels,
         )
 
@@ -120,15 +133,30 @@ class DocumentProcessor:
         languages: Sequence[str] | None = None,
         language_usage: Mapping[str, float] | None = None,
         profile: OCRProfile = OCRProfile.OCR_TEXT_V2,
+        routing_policy: str = "AUTO",
+        cancellation_check: Callable[[], None] | None = None,
+        page_timeout_seconds: float | None = None,
+        page_progress_callback: Callable[[int, int, object], None] | None = None,
     ) -> DocumentResult:
-        """Return the copied canonical OCR result for a local PDF."""
-        return self._ocr_worker.process_document(
+        """Return the copied canonical OCR result for a local PDF.
+
+        ``routing_policy`` and the lifecycle callbacks are thin pass-throughs
+        for application consumers that need the same route and cooperative
+        cancellation contract as the original worker.  They do not add
+        PDFNest job or storage concerns to the SDK.
+        """
+        selected_policy = _route_policy(routing_policy)
+        worker = self._ocr_worker if selected_policy == RoutePolicy() else self._make_worker(self.config.max_raster_pixels, routing_policy)
+        return worker.process_document(
             pdf_path,
             language=language,
             language_mode=language_mode,
             languages=languages,
             language_usage=language_usage,
             profile=profile,
+            cancellation_check=cancellation_check,
+            page_timeout_seconds=page_timeout_seconds,
+            page_progress_callback=page_progress_callback,
         )
 
     def extract_document(

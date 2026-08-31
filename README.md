@@ -33,6 +33,11 @@ markdown = processor.to_markdown(structured)
 processor.make_searchable_pdf("scanned.pdf", "scanned-searchable.pdf")
 ```
 
+`extract_text` also accepts the copied worker's `routing_policy` plus optional
+cooperative `cancellation_check`, `page_timeout_seconds`, and
+`page_progress_callback` controls. These are thin engine controls for an
+application adapter; the SDK still does not own application jobs or storage.
+
 The package can process local files without PDFNest backend, PostgreSQL,
 Redis, Dramatiq, frontend, HTTP services, authentication, billing, or
 application storage.
@@ -71,7 +76,9 @@ secrets.
 
 PDFNest authentication, anonymous ownership, quotas, rate limits, durable job
 orchestration, storage policy, cleanup, product routes, and UI remain outside
-this package. PDFNest has not been connected to this SDK in this milestone;
-the existing internal engine remains the fallback and parity reference.
+this package. OCR Text V2 now has a controlled PDFNest-side opt-in adapter that
+uses this public API; `OCR_TEXT_ENGINE=internal` remains the default and keeps
+the existing internal engine as the fallback and parity reference. Other
+PDFNest consumers have not been migrated.
 
 No package has been published to a public registry.
