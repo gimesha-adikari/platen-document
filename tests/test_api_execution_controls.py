@@ -5,6 +5,8 @@ from types import SimpleNamespace
 import pytest
 
 from platen_document.api.engine import DocumentProcessor
+from platen_document import MarkupAction, MarkupMode
+import platen_document.api.engine as engine_module
 
 
 class _FakeWorker:
@@ -119,3 +121,48 @@ def test_extract_document_preserves_lifecycle_controls() -> None:
     assert structured.calls["routing_policy"] == "AUTO"
     assert structured.calls["cancellation_check"] is cancel
     assert structured.calls["page_progress_callback"] is progress
+
+
+def test_apply_markup_public_api_maps_strings_to_canonical_markup_types(monkeypatch: pytest.MonkeyPatch) -> None:
+    calls: dict[str, object] = {}
+    marker = object()
+
+    def apply_markup(input_path: str, output_path: str, **kwargs: object) -> object:
+        calls["input_path"] = input_path
+        calls["output_path"] = output_path
+        calls.update(kwargs)
+        return marker
+
+    monkeypatch.setattr(engine_module, "apply_ocr_markup", apply_markup)
+    processor = DocumentProcessor.__new__(DocumentProcessor)
+    cancel = lambda: None
+    progress = lambda _done, _total: None
+
+    result = processor.apply_markup(
+        "/tmp/input.pdf",
+        "/tmp/output.pdf",
+        action="underline",
+        query="Alpha Bravo",
+        language="eng+sin",
+        language_mode="EXPLICIT",
+        languages=("eng", "sin"),
+        language_usage={"sin": 0.5},
+        mode="ocr",
+        color=(0.1, 0.2, 0.3),
+        cancellation_check=cancel,
+        progress_callback=progress,
+    )
+
+    assert result is marker
+    assert calls["input_path"] == "/tmp/input.pdf"
+    assert calls["output_path"] == "/tmp/output.pdf"
+    assert calls["action"] is MarkupAction.UNDERLINE
+    assert calls["mode"] is MarkupMode.OCR
+    assert calls["query"] == "Alpha Bravo"
+    assert calls["language"] == "eng+sin"
+    assert calls["language_mode"] == "EXPLICIT"
+    assert calls["languages"] == ("eng", "sin")
+    assert calls["language_usage"] == {"sin": 0.5}
+    assert calls["color"] == (0.1, 0.2, 0.3)
+    assert calls["cancellation_check"] is cancel
+    assert calls["progress_callback"] is progress

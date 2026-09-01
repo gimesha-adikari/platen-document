@@ -10,6 +10,7 @@ from typing import Callable, Mapping, Sequence
 from ..diagnostics.doctor import build_doctor_report
 from ..engine.adapters import PPOCRv6MediumAdapter, TesseractAdapter
 from ..engine.geometry import RasterPreparer
+from ..engine.markup import MarkupAction, MarkupExecutionResult, MarkupMode, apply_ocr_markup
 from ..engine.orchestration import OCRV2Worker
 from ..engine.renderers import SearchablePdfRenderer, TextRenderer
 from ..engine.routing import RoutePolicy
@@ -247,6 +248,46 @@ class DocumentProcessor:
         )
         self._searchable_pdf_renderer.render(source_pdf, checked, output_pdf, job_id=job_id)
         return checked
+
+    def apply_markup(
+        self,
+        input_path: str | Path,
+        output_path: str | Path,
+        *,
+        action: MarkupAction | str,
+        query: str,
+        language: str = "eng",
+        language_mode: str | None = None,
+        languages: Sequence[str] | None = None,
+        language_usage: Mapping[str, float] | None = None,
+        mode: MarkupMode | str = MarkupMode.SMART,
+        color: tuple[float, float, float] = (1.0, 1.0, 0.0),
+        cancellation_check: Callable[[], None] | None = None,
+        progress_callback: Callable[[int, int], None] | None = None,
+    ) -> MarkupExecutionResult:
+        """Apply one OCR-aware markup operation to a local PDF.
+
+        This is a deliberately thin public wrapper around the extracted
+        markup engine.  It accepts the string values used by application
+        consumers while retaining the canonical SDK enums and result schema.
+        PDFNest owns storage, jobs, authorization, and lifecycle concerns.
+        """
+        selected_action = action if isinstance(action, MarkupAction) else MarkupAction(str(action))
+        selected_mode = mode if isinstance(mode, MarkupMode) else MarkupMode(str(mode))
+        return apply_ocr_markup(
+            input_path,
+            output_path,
+            action=selected_action,
+            query=query,
+            language=language,
+            language_mode=language_mode,
+            languages=languages,
+            language_usage=language_usage,
+            mode=selected_mode,
+            color=color,
+            cancellation_check=cancellation_check,
+            progress_callback=progress_callback,
+        )
 
     def render_text(self, result: DocumentResult) -> str:
         """Render validated canonical OCR text without application concerns."""
