@@ -37,6 +37,30 @@ def _scanned_pdf(path: Path) -> None:
         document.save(str(path))
 
 
+def _native_table_pdf(path: Path) -> None:
+    with fitz.open() as document:
+        page = document.new_page(width=600, height=400)
+        x_edges = (50, 130, 340, 430, 550)
+        y_edges = (60, 100, 140, 180, 220)
+        shape = page.new_shape()
+        for x in x_edges:
+            shape.draw_line((x, y_edges[0]), (x, y_edges[-1]))
+        for y in y_edges:
+            shape.draw_line((x_edges[0], y), (x_edges[-1], y))
+        shape.finish(color=(0, 0, 0), width=0.8)
+        shape.commit()
+        cells = (
+            ("No.", "Module", "Credits", "Status"),
+            ("01", "Alpha", "21", "Followed"),
+            ("02", "Beta", "16", "Followed"),
+            ("03", "Gamma", "12", "Followed"),
+        )
+        for row, values in enumerate(cells):
+            for column, value in enumerate(values):
+                page.insert_text((x_edges[column] + 5, y_edges[row] + 25), value, fontsize=10)
+        document.save(str(path))
+
+
 def _synthetic_page(lines: list[tuple[str, float, list[tuple[str, float]]]]) -> PageResult:
     ocr_lines = []
     tokens = []
@@ -69,6 +93,23 @@ def test_native_document_uses_canonical_structured_schema() -> None:
     assert all(page.processing_source == "NATIVE_EXTRACTION" for page in result.pages)
     assert any(element.type is StructuredElementType.HEADING for page in result.pages for element in page.elements)
     assert any(line.startswith("## ") for line in render_structured_markdown(result).splitlines())
+
+
+def test_native_table_preserves_structured_table_contract(tmp_path: Path) -> None:
+    pdf_path = tmp_path / "native-table.pdf"
+    _native_table_pdf(pdf_path)
+
+    result = DocumentProcessor().extract_document(pdf_path, language="eng", language_mode="EXPLICIT", languages=("eng",), routing_policy="FAST")
+
+    table_elements = [
+        element
+        for page in result.pages
+        for element in page.elements
+        if element.type is StructuredElementType.TABLE
+    ]
+    assert len(table_elements) == 1
+    assert result.validation["valid"] is True
+    assert "| No. | Module | Credits | Status |" in render_structured_markdown(result)
 
 
 def test_scanned_document_uses_real_tesseract_and_markdown(tmp_path: Path) -> None:

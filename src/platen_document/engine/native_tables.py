@@ -27,6 +27,18 @@ class TableNode:
     headers: list[TableCell]
     rows: list[list[TableCell]]
 
+    @property
+    def bbox(self) -> "TableNode":
+        """Expose the frozen table-boundary shape used by structured.py.
+
+        The extracted neutral node stores scalar coordinates so it does not
+        depend on PDFNest's IR ``Rect`` type.  The copied structured processor
+        accesses the same four coordinates through ``table.bbox``; returning
+        this node preserves that boundary without introducing a second geometry
+        type or changing table detection.
+        """
+        return self
+
 
 SECTION_KEYWORDS = {
     "SUMMARY", "EDUCATION", "SKILLS", "PROJECTS", "EXPERIENCE",
