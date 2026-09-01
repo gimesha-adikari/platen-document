@@ -33,6 +33,18 @@ markdown = processor.to_markdown(structured)
 processor.make_searchable_pdf("scanned.pdf", "scanned-searchable.pdf")
 ```
 
+Application adapters that need to preserve the canonical searchable-PDF
+profile can use the public profile enum and pass an already extracted result to
+the render step, avoiding a second OCR pass:
+
+```python
+from platen_document import DocumentProcessor, OCRProfile
+
+processor = DocumentProcessor()
+result = processor.extract_text("scanned.pdf", profile=OCRProfile.SEARCHABLE_PDF_V2)
+processor.make_searchable_pdf("scanned.pdf", "scanned-searchable.pdf", result=result)
+```
+
 `extract_text` also accepts the copied worker's `routing_policy` plus optional
 cooperative `cancellation_check`, `page_timeout_seconds`, and
 `page_progress_callback` controls. These are thin engine controls for an
@@ -76,9 +88,11 @@ secrets.
 
 PDFNest authentication, anonymous ownership, quotas, rate limits, durable job
 orchestration, storage policy, cleanup, product routes, and UI remain outside
-this package. OCR Text V2 now has a controlled PDFNest-side opt-in adapter that
+this package. OCR Text V2 has a controlled PDFNest-side opt-in adapter that
 uses this public API; `OCR_TEXT_ENGINE=internal` remains the default and keeps
-the existing internal engine as the fallback and parity reference. Other
-PDFNest consumers have not been migrated.
+the existing internal engine as the fallback and parity reference. Searchable
+PDF V2 has a separate consumer-specific opt-in boundary in the same form;
+`SEARCHABLE_PDF_ENGINE=internal` remains its default. Other PDFNest consumers
+have not been migrated.
 
 No package has been published to a public registry.

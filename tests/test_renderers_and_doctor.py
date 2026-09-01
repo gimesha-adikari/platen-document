@@ -5,7 +5,7 @@ from pathlib import Path
 import pymupdf as fitz
 from PIL import Image, ImageDraw
 
-from platen_document import DocumentProcessor
+from platen_document import DocumentProcessor, OCRProfile
 from platen_document.engine.image_pages import build_image_source_pdf
 from platen_document.engine.renderers import SearchablePdfRenderer
 from platen_document.engine.validation import OCRProfile
@@ -39,3 +39,7 @@ def test_standalone_searchable_pdf_uses_canonical_word_geometry(tmp_path: Path) 
         assert document[0].get_text("words")
         assert "Forensics" in document[0].get_text("text")
         assert len(document[0].get_images(full=True)) == 1
+
+
+def test_searchable_profile_is_available_from_public_package_api() -> None:
+    assert OCRProfile.SEARCHABLE_PDF_V2.value == "SEARCHABLE_PDF_V2"
