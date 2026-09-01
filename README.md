@@ -109,5 +109,6 @@ rollback/reference path; there is no implicit runtime fallback from a selected
 SDK engine. PDF-to-Word OCR fallback and Studio OCR/document paths remain
 internal-only and are not migrated.
 
-Registry delivery remains a separate external track. No package has been
-published to a public registry.
+Registry delivery remains separately classified
+`DOCUMENT_SDK_REGISTRY_DEPENDENCY_DELIVERY_BLOCKED_EXTERNAL`; no package has
+been published to a public registry.
