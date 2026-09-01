@@ -89,15 +89,25 @@ The doctor output contains safe local capability metadata only. It does not
 know about PDFNest users, guests, quotas, jobs, queues, storage providers, or
 secrets.
 
-## Boundary and status
+## Boundary and current PDFNest consumer status
 
 PDFNest authentication, anonymous ownership, quotas, rate limits, durable job
 orchestration, storage policy, cleanup, product routes, and UI remain outside
-this package. OCR Text V2 has a controlled PDFNest-side opt-in adapter that
-uses this public API; `OCR_TEXT_ENGINE=internal` remains the default and keeps
-the existing internal engine as the fallback and parity reference. Searchable
-PDF V2 has a separate consumer-specific opt-in boundary in the same form;
-`SEARCHABLE_PDF_ENGINE=internal` remains its default. Other PDFNest consumers
-have not been migrated.
+this package. The following PDFNest consumers now have independent,
+consumer-specific `internal|sdk` execution boundaries:
 
-No package has been published to a public registry.
+- OCR Text V2 (`OCR_TEXT_ENGINE`);
+- Searchable PDF V2 (`SEARCHABLE_PDF_ENGINE`);
+- Document Extraction V2 (`DOCUMENT_EXTRACTION_ENGINE`);
+- PDF-to-Markdown V2 (`PDF_TO_MARKDOWN_ENGINE`);
+- OCR-aware Highlight/Underline/Strikeout (`OCR_MARKUP_ENGINE`); and
+- General Editor OCR (`EDITOR_OCR_ENGINE`).
+
+Each selector defaults to `internal`; `sdk` is an explicit opt-in. The frozen
+PDFNest implementation remains available as the default and configuration-only
+rollback/reference path; there is no implicit runtime fallback from a selected
+SDK engine. PDF-to-Word OCR fallback and Studio OCR/document paths remain
+internal-only and are not migrated.
+
+Registry delivery remains a separate external track. No package has been
+published to a public registry.
