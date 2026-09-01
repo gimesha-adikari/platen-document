@@ -129,6 +129,7 @@ class DocumentProcessor:
         self,
         pdf_path: str | Path,
         *,
+        password: str | None = None,
         language: str = "eng",
         language_mode: str | None = None,
         languages: Sequence[str] | None = None,
@@ -150,6 +151,7 @@ class DocumentProcessor:
         worker = self._ocr_worker if selected_policy == RoutePolicy() else self._make_worker(self.config.max_raster_pixels, routing_policy)
         return worker.process_document(
             pdf_path,
+            password=password,
             language=language,
             language_mode=language_mode,
             languages=languages,

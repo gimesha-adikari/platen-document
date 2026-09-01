@@ -46,6 +46,7 @@ def test_extract_text_preserves_lifecycle_controls_on_default_route() -> None:
 
     result = processor.extract_text(
         "/tmp/input.pdf",
+        password="document-password",
         language="auto",
         language_mode="AUTO",
         languages=("eng", "sin"),
@@ -57,6 +58,7 @@ def test_extract_text_preserves_lifecycle_controls_on_default_route() -> None:
 
     assert result is worker.result
     assert worker.calls["path"] == "/tmp/input.pdf"
+    assert worker.calls["password"] == "document-password"
     assert worker.calls["language"] == "auto"
     assert worker.calls["language_mode"] == "AUTO"
     assert worker.calls["languages"] == ("eng", "sin")
