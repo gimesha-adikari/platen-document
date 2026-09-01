@@ -42,7 +42,12 @@ from platen_document import DocumentProcessor, OCRProfile
 
 processor = DocumentProcessor()
 result = processor.extract_text("scanned.pdf", profile=OCRProfile.SEARCHABLE_PDF_V2)
-processor.make_searchable_pdf("scanned.pdf", "scanned-searchable.pdf", result=result)
+processor.make_searchable_pdf(
+    "scanned.pdf",
+    "scanned-searchable.pdf",
+    result=result,
+    job_id="optional-diagnostic-correlation",
+)
 ```
 
 `extract_text` also accepts the copied worker's `routing_policy` plus optional

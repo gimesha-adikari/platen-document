@@ -221,8 +221,13 @@ class DocumentProcessor:
         languages: Sequence[str] | None = None,
         language_usage: Mapping[str, float] | None = None,
         result: DocumentResult | None = None,
+        job_id: str | None = None,
     ) -> DocumentResult:
-        """Create and independently validate a searchable PDF from a PDF."""
+        """Create and independently validate a searchable PDF from a PDF.
+
+        ``job_id`` is an optional diagnostic correlation value for application
+        consumers. It is not persisted in the document or used for ownership.
+        """
         checked = result or self.extract_text(
             source_pdf,
             language=language,
@@ -231,7 +236,7 @@ class DocumentProcessor:
             language_usage=language_usage,
             profile=OCRProfile.SEARCHABLE_PDF_V2,
         )
-        self._searchable_pdf_renderer.render(source_pdf, checked, output_pdf)
+        self._searchable_pdf_renderer.render(source_pdf, checked, output_pdf, job_id=job_id)
         return checked
 
     def render_text(self, result: DocumentResult) -> str:

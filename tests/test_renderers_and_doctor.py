@@ -41,5 +41,24 @@ def test_standalone_searchable_pdf_uses_canonical_word_geometry(tmp_path: Path) 
         assert len(document[0].get_images(full=True)) == 1
 
 
+def test_searchable_pdf_public_api_forwards_diagnostic_job_id(tmp_path: Path, monkeypatch) -> None:
+    _, source = _searchable_fixture(tmp_path)
+    output = tmp_path / "rendered.pdf"
+    calls: list[str | None] = []
+    processor = DocumentProcessor()
+
+    original_render = processor._searchable_pdf_renderer.render
+
+    def render_with_capture(source_pdf, result, output_pdf, *, job_id=None):
+        calls.append(job_id)
+        return original_render(source_pdf, result, output_pdf, job_id=job_id)
+
+    monkeypatch.setattr(processor._searchable_pdf_renderer, "render", render_with_capture)
+    result = processor.extract_text(source, language="eng", profile=OCRProfile.SEARCHABLE_PDF_V2)
+    processor.make_searchable_pdf(source, output, result=result, job_id="public-api-job")
+
+    assert calls == ["public-api-job"]
+
+
 def test_searchable_profile_is_available_from_public_package_api() -> None:
     assert OCRProfile.SEARCHABLE_PDF_V2.value == "SEARCHABLE_PDF_V2"
