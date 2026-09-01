@@ -168,8 +168,15 @@ class DocumentProcessor:
         languages: Sequence[str] | None = None,
         language_usage: Mapping[str, float] | None = None,
         routing_policy: str = "AUTO",
+        cancellation_check: Callable[[], None] | None = None,
+        page_progress_callback: Callable[[int, int, object], None] | None = None,
     ) -> StructuredDocumentResult:
-        """Return the copied canonical structured-document result."""
+        """Return the copied canonical structured-document result.
+
+        The callbacks are thin lifecycle pass-throughs for application
+        consumers.  They keep cancellation and per-page progress outside the
+        SDK while preserving the structured processor's existing behavior.
+        """
         return self._structured_processor.process_document(
             pdf_path,
             language=language,
@@ -177,6 +184,8 @@ class DocumentProcessor:
             languages=languages,
             language_usage=language_usage,
             routing_policy=routing_policy,
+            cancellation_check=cancellation_check,
+            page_progress_callback=page_progress_callback,
         )
 
     def to_markdown(

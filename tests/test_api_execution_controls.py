@@ -18,6 +18,17 @@ class _FakeWorker:
         return self.result
 
 
+class _FakeStructuredProcessor:
+    def __init__(self) -> None:
+        self.calls: dict[str, object] = {}
+        self.result = object()
+
+    def process_document(self, path: str, **kwargs: object) -> object:
+        self.calls["path"] = path
+        self.calls.update(kwargs)
+        return self.result
+
+
 def _processor(worker: _FakeWorker) -> DocumentProcessor:
     processor = DocumentProcessor.__new__(DocumentProcessor)
     processor.config = SimpleNamespace(max_raster_pixels=None)
@@ -78,3 +89,33 @@ def test_extract_text_rejects_unknown_routing_policy() -> None:
 
     with pytest.raises(ValueError, match="unsupported OCR routing policy"):
         processor.extract_text("/tmp/input.pdf", routing_policy="UNKNOWN")
+
+
+def test_extract_document_preserves_lifecycle_controls() -> None:
+    worker = _FakeWorker()
+    structured = _FakeStructuredProcessor()
+    processor = _processor(worker)
+    processor._structured_processor = structured  # type: ignore[attr-defined]
+    cancel = lambda: None
+    progress = lambda _done, _total, _page: None
+
+    result = processor.extract_document(
+        "/tmp/input.pdf",
+        language="auto",
+        language_mode="AUTO",
+        languages=("eng", "sin"),
+        language_usage={"sin": 0.5},
+        routing_policy="AUTO",
+        cancellation_check=cancel,
+        page_progress_callback=progress,
+    )
+
+    assert result is structured.result
+    assert structured.calls["path"] == "/tmp/input.pdf"
+    assert structured.calls["language"] == "auto"
+    assert structured.calls["language_mode"] == "AUTO"
+    assert structured.calls["languages"] == ("eng", "sin")
+    assert structured.calls["language_usage"] == {"sin": 0.5}
+    assert structured.calls["routing_policy"] == "AUTO"
+    assert structured.calls["cancellation_check"] is cancel
+    assert structured.calls["page_progress_callback"] is progress
