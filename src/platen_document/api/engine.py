@@ -96,6 +96,12 @@ def _route_policy(value: str | object | None) -> RoutePolicy:
     normalized = str(raw or "AUTO").strip().upper()
     if normalized in {"FAST", "LANGUAGE_FALLBACK"}:
         return RoutePolicy(preferred_engine="tesseract_v2", fallback_engine="tesseract_v2")
+    if normalized == "FORCE_OCR":
+        return RoutePolicy(
+            preferred_engine="tesseract_v2",
+            fallback_engine="tesseract_v2",
+            allow_native=False,
+        )
     if normalized in {"AUTO", "QUALITY", "GEOMETRY"}:
         return RoutePolicy(preferred_engine="ppocrv6_medium_v2", fallback_engine="tesseract_v2")
     raise ValueError(f"unsupported OCR routing policy: {normalized}")

@@ -39,7 +39,7 @@ class OCRRouter:
     def plan(self, decision: NativeValidationResult, profile: OCRProfile) -> RoutePlan:
         if self.policy.allow_native and decision.decision == NativeDecision.TRUST_NATIVE:
             return RoutePlan("NATIVE", reason="validated native text layer")
-        if decision.classification is PageContentClassification.BLANK:
+        if self.policy.allow_native and decision.classification is PageContentClassification.BLANK:
             return RoutePlan("NATIVE", reason="blank page has no OCR content")
         if decision.decision == NativeDecision.UNDECIDED:
             raise NativeTextUndecidedError("native validator could not safely select native text or visual OCR")

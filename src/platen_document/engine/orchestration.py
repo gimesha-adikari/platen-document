@@ -118,7 +118,11 @@ class OCRV2Worker:
                 try:
                     candidate = self.native_extractor.extract(page, page_index)
                     decision = self.native_validator.validate(candidate)
-                    if decision.decision == NativeDecision.TRUST_NATIVE or decision.classification.value in {"BLANK", "NEAR_BLANK"} and not candidate.text.strip():
+                    if self.router.policy.allow_native and (
+                        decision.decision == NativeDecision.TRUST_NATIVE
+                        or decision.classification.value in {"BLANK", "NEAR_BLANK"}
+                        and not candidate.text.strip()
+                    ):
                         output = self._native_output(candidate)
                         geometry = page_geometry_from_pdf(page)
                         normalized = normalize_page_output(output, page_index=page_index, geometry=geometry, classification=decision.classification, processing_source=PageProcessingSource.NATIVE_EXTRACTION, language=LanguageMetadata(policy.languages, (), "REQUESTED", (), "NOT_DETECTED", policy.mode.value))

@@ -54,6 +54,10 @@ processor.make_searchable_pdf(
 cooperative `cancellation_check`, `page_timeout_seconds`, and
 `page_progress_callback` controls. These are thin engine controls for an
 application adapter; the SDK still does not own application jobs or storage.
+The default routing policy preserves validated native text when appropriate.
+An application adapter with a historical OCR-only contract may opt into
+`routing_policy="FORCE_OCR"`; this selects the OCR route without changing the
+default behavior of existing consumers.
 
 The package can process local files without PDFNest backend, PostgreSQL,
 Redis, Dramatiq, frontend, HTTP services, authentication, billing, or
