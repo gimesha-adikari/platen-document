@@ -9,7 +9,7 @@ from typing import Callable, Mapping, Sequence
 
 from ..diagnostics.doctor import build_doctor_report
 from ..engine.adapters import PPOCRv6MediumAdapter, TesseractAdapter
-from ..engine.geometry import RasterPreparer
+from ..engine.geometry import RasterDpiMetadataPolicy, RasterPreparer
 from ..engine.markup import MarkupAction, MarkupExecutionResult, MarkupMode, apply_ocr_markup
 from ..engine.orchestration import OCRV2Worker
 from ..engine.renderers import SearchablePdfRenderer, TextRenderer
@@ -36,8 +36,16 @@ class EngineConfiguration:
     tessdata_dir: str | None = None
     tesseract_timeout: float = 300.0
     raster_dpi: int = 200
+    raster_dpi_metadata_policy: RasterDpiMetadataPolicy = RasterDpiMetadataPolicy.EMBED_DPI
     max_raster_pixels: int | None = None
     structured_max_raster_pixels: int | None = None
+
+    def __post_init__(self) -> None:
+        object.__setattr__(
+            self,
+            "raster_dpi_metadata_policy",
+            RasterDpiMetadataPolicy.coerce(self.raster_dpi_metadata_policy),
+        )
 
     @classmethod
     def from_env(cls) -> "EngineConfiguration":
@@ -120,7 +128,10 @@ class DocumentProcessor:
                 "tesseract_v2": tesseract,
                 "ppocrv6_medium_v2": PPOCRv6MediumAdapter(),
             },
-            raster_preparer=RasterPreparer(self.config.raster_dpi),
+            raster_preparer=RasterPreparer(
+                self.config.raster_dpi,
+                dpi_metadata_policy=self.config.raster_dpi_metadata_policy,
+            ),
             route_policy=_route_policy(routing_policy),
             max_raster_pixels=max_raster_pixels,
         )

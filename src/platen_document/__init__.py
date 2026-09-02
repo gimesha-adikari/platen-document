@@ -1,6 +1,6 @@
 """Standalone PDFNest document-processing SDK extraction."""
 
-from .api import DocumentEngine, DocumentProcessor, EngineConfiguration
+from .api import DocumentEngine, DocumentProcessor, EngineConfiguration, RasterDpiMetadataPolicy
 from .engine.errors import (
     AnnotationWriteError,
     AmbiguousSelectionError,
@@ -19,6 +19,7 @@ __all__ = [
     "DocumentEngine",
     "DocumentProcessor",
     "EngineConfiguration",
+    "RasterDpiMetadataPolicy",
     "EngineUnavailableError",
     "MarkupAction",
     "MarkupError",

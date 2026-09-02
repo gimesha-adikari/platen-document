@@ -75,6 +75,29 @@ processor = DocumentProcessor(EngineConfiguration(
 ))
 ```
 
+The encoded OCR raster normally carries the configured DPI as PNG metadata.
+An adapter that must reproduce a historical OCR input contract can opt into
+the neutral public compatibility policy without changing rendered pixels:
+
+```python
+from platen_document import (
+    DocumentProcessor,
+    EngineConfiguration,
+    RasterDpiMetadataPolicy,
+)
+
+processor = DocumentProcessor(EngineConfiguration(
+    raster_dpi=144,
+    raster_dpi_metadata_policy=RasterDpiMetadataPolicy.OMIT_DPI,
+))
+```
+
+`EMBED_DPI` is the default. `OMIT_DPI` changes only the DPI metadata in the
+encoded OCR image; it does not change raster dimensions, page geometry, or
+the Tesseract language/routing policy. This option is intended for a
+consumer-specific compatibility adapter, not for a product-wide environment
+switch.
+
 The copied engine retains its known tessdata fallback behavior, including
 fallback from a stale `TESSDATA_PREFIX` when a known local system directory is
 available.

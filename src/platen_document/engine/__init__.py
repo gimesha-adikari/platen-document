@@ -1,7 +1,7 @@
 """Copied, parity-preserving PDFNest OCR V2 engine namespace."""
 
 from .contracts import *
-from .geometry import PreparedRaster, RasterPreparer, normalize_rotation, page_geometry_from_pdf, pixel_rect_to_points
+from .geometry import PreparedRaster, RasterDpiMetadataPolicy, RasterPreparer, normalize_rotation, page_geometry_from_pdf, pixel_rect_to_points
 from .image_pages import build_image_source_pdf, normalize_image
 from .language_policy import *
 from .native import NativeDecision, NativeExtractor, NativeValidator
@@ -18,4 +18,5 @@ __all__ = [
     "render_structured_markdown", "OCRProfile", "RoutePolicy", "OCRRouter",
     "MarkupAction", "MarkupExecutionResult", "MarkupMode", "MarkupSelection",
     "MarkupSourceType", "apply_ocr_markup", "select_query", "select_regions",
+    "RasterDpiMetadataPolicy",
 ]

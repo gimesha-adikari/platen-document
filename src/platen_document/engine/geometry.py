@@ -9,12 +9,32 @@ from __future__ import annotations
 
 import io
 from dataclasses import dataclass
+from enum import Enum
 from typing import Any
 
 import pymupdf as fitz
 from PIL import Image, ImageOps
 
 from .contracts import PageGeometry, Rect
+
+
+class RasterDpiMetadataPolicy(str, Enum):
+    """Control DPI metadata on the encoded OCR raster without changing pixels."""
+
+    EMBED_DPI = "embed_dpi"
+    OMIT_DPI = "omit_dpi"
+
+    @classmethod
+    def coerce(cls, value: "RasterDpiMetadataPolicy | str") -> "RasterDpiMetadataPolicy":
+        if isinstance(value, cls):
+            return value
+        try:
+            return cls(str(value).strip().lower())
+        except ValueError as exc:
+            supported = ", ".join(item.value for item in cls)
+            raise ValueError(
+                f"unsupported raster DPI metadata policy: {value!r}; expected one of: {supported}"
+            ) from exc
 
 
 def normalize_rotation(rotation: int) -> int:
@@ -72,10 +92,16 @@ class PreparedRaster:
 class RasterPreparer:
     """Render a PDF page and normalize EXIF orientation before OCR."""
 
-    def __init__(self, dpi: int = 200) -> None:
+    def __init__(
+        self,
+        dpi: int = 200,
+        *,
+        dpi_metadata_policy: RasterDpiMetadataPolicy | str = RasterDpiMetadataPolicy.EMBED_DPI,
+    ) -> None:
         if dpi <= 0:
             raise ValueError("dpi must be positive")
         self.dpi = dpi
+        self.dpi_metadata_policy = RasterDpiMetadataPolicy.coerce(dpi_metadata_policy)
 
     def prepare(self, page: Any) -> PreparedRaster:
         scale = self.dpi / 72.0
@@ -84,6 +110,9 @@ class RasterPreparer:
         with Image.open(io.BytesIO(raw)) as loaded:
             image = ImageOps.exif_transpose(loaded).convert("RGB")
         encoded = io.BytesIO()
-        image.save(encoded, format="PNG", dpi=(self.dpi, self.dpi))
+        if self.dpi_metadata_policy is RasterDpiMetadataPolicy.EMBED_DPI:
+            image.save(encoded, format="PNG", dpi=(self.dpi, self.dpi))
+        else:
+            image.save(encoded, format="PNG")
         geometry = page_geometry_from_pdf(page, pixel_width=image.width, pixel_height=image.height)
         return PreparedRaster(image=image, png_bytes=encoded.getvalue(), geometry=geometry, dpi=self.dpi)

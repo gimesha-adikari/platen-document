@@ -57,3 +57,14 @@ The copied engine preserves the current canonical OCR and structured-document
 contracts, including `ocr_v2_structured_document.v1`, page indexing, geometry,
 reading order, provenance, warnings, bounded scanned structure, searchable-PDF
 requirements, and fail-closed validation.
+
+## OCR raster metadata compatibility
+
+`EngineConfiguration.raster_dpi_metadata_policy` is a neutral public seam for
+the small distinction between raster rendering and encoded-image metadata.
+`RasterDpiMetadataPolicy.EMBED_DPI` is the default and preserves the existing
+SDK behavior. `RasterDpiMetadataPolicy.OMIT_DPI` removes only the PNG DPI
+metadata while preserving the rendered pixel buffer and canonical page
+geometry. A PDFNest adapter may select this policy only when it has a proven
+historical OCR input contract that requires it; the SDK does not inspect
+PDFNest consumer names.
