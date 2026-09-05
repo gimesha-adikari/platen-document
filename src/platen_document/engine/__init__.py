@@ -10,13 +10,30 @@ from .profiles import product_verdict, searchable_pdf_reason
 from .routing import OCRRouter, RoutePlan, RoutePolicy
 from .structured import StructuredDocumentProcessor, StructuredDocumentResult, StructuredElement, StructuredElementType, StructuredPage, render_structured_markdown
 from .validation import OCRProfile, profile_disposition, require_profile, validate_document, validate_page
-from .markup import MarkupAction, MarkupExecutionResult, MarkupMode, MarkupSelection, MarkupSourceType, apply_ocr_markup, select_query, select_regions
+from .markup import (
+    MarkupAction,
+    MarkupColor,
+    MarkupExecutionResult,
+    MarkupMode,
+    MarkupRegion,
+    MarkupRegionStatus,
+    MarkupSelection,
+    MarkupSourceType,
+    RegionMarkupExecutionResult,
+    ResolvedMarkupRegion,
+    apply_ocr_markup,
+    apply_region_markup,
+    select_query,
+    select_regions,
+)
 
 __all__ = [
     "OCRV2Worker", "StructuredDocumentProcessor", "StructuredDocumentResult",
     "StructuredElement", "StructuredElementType", "StructuredPage",
     "render_structured_markdown", "OCRProfile", "RoutePolicy", "OCRRouter",
     "MarkupAction", "MarkupExecutionResult", "MarkupMode", "MarkupSelection",
-    "MarkupSourceType", "apply_ocr_markup", "select_query", "select_regions",
+    "MarkupSourceType", "MarkupColor", "MarkupRegion", "MarkupRegionStatus",
+    "ResolvedMarkupRegion", "RegionMarkupExecutionResult", "apply_ocr_markup",
+    "apply_region_markup", "select_query", "select_regions",
     "RasterDpiMetadataPolicy",
 ]

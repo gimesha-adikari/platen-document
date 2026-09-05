@@ -18,6 +18,8 @@ geometry, rendering, or validation contracts.
   and simple-table behavior;
 - Markdown rendering;
 - searchable-PDF rendering with invisible text and independent validation;
+- query-based and typed region-based Highlight, Underline, and Strikeout
+  markup; and
 - local capability inspection through `DocumentProcessor.capabilities()` or
   `platen-document doctor`.
 
@@ -62,6 +64,17 @@ default behavior of existing consumers.
 The package can process local files without PDFNest backend, PostgreSQL,
 Redis, Dramatiq, frontend, HTTP services, authentication, billing, or
 application storage.
+
+## Region-based markup
+
+`DocumentProcessor.apply_markup_regions` accepts typed, one-based page regions
+in the existing visible CropBox-relative PDF-point coordinate space. Manual
+regions annotate directly without OCR. OCR-aware regions can reuse a public
+`DocumentResult` to avoid a second extraction pass, or perform one public
+`extract_text` pass when no result is supplied. Per-region colors, cooperative
+cancellation, and real annotation progress are supported. See
+[the region markup API guide](docs/region_markup.md) for the full coordinate,
+password, result, and overlap contract.
 
 ## Configuration and system dependencies
 

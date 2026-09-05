@@ -10,7 +10,15 @@ from typing import Callable, Mapping, Sequence
 from ..diagnostics.doctor import build_doctor_report
 from ..engine.adapters import PPOCRv6MediumAdapter, TesseractAdapter
 from ..engine.geometry import RasterDpiMetadataPolicy, RasterPreparer
-from ..engine.markup import MarkupAction, MarkupExecutionResult, MarkupMode, apply_ocr_markup
+from ..engine.markup import (
+    MarkupAction,
+    MarkupExecutionResult,
+    MarkupMode,
+    MarkupRegion,
+    RegionMarkupExecutionResult,
+    apply_ocr_markup,
+    apply_region_markup,
+)
 from ..engine.orchestration import OCRV2Worker
 from ..engine.renderers import SearchablePdfRenderer, TextRenderer
 from ..engine.routing import RoutePolicy
@@ -304,6 +312,69 @@ class DocumentProcessor:
             language_usage=language_usage,
             mode=selected_mode,
             color=color,
+            cancellation_check=cancellation_check,
+            progress_callback=progress_callback,
+        )
+
+    def apply_markup_regions(
+        self,
+        input_path: str | Path,
+        output_path: str | Path,
+        *,
+        action: MarkupAction | str,
+        regions: Sequence[MarkupRegion],
+        mode: MarkupMode | str = MarkupMode.SMART,
+        result: DocumentResult | None = None,
+        password: str | None = None,
+        language: str = "eng",
+        language_mode: str | None = None,
+        languages: Sequence[str] | None = None,
+        language_usage: Mapping[str, float] | None = None,
+        routing_policy: str = "AUTO",
+        cancellation_check: Callable[[], None] | None = None,
+        page_timeout_seconds: float | None = None,
+        page_progress_callback: Callable[[int, int, object], None] | None = None,
+        progress_callback: Callable[[int, int], None] | None = None,
+    ) -> RegionMarkupExecutionResult:
+        """Apply markup to typed page rectangles using canonical PDF geometry.
+
+        ``MarkupMode.MANUAL`` writes the supplied rectangles directly and never
+        extracts text.  OCR-aware modes either reuse a compatible public
+        :class:`DocumentResult` or make exactly one ``extract_text`` call.
+        ``MarkupRegion.page_number`` is one-based; its rectangle is in visible
+        CropBox-relative PDF points with a top-left origin.
+        """
+        selected_action = action if isinstance(action, MarkupAction) else MarkupAction(str(action))
+        selected_mode = mode if isinstance(mode, MarkupMode) else MarkupMode(str(mode))
+        selected_regions = tuple(regions)
+        reused = selected_mode is not MarkupMode.MANUAL and result is not None
+        extracted = False
+        canonical_result = result
+        if selected_mode is not MarkupMode.MANUAL and canonical_result is None:
+            canonical_result = self.extract_text(
+                input_path,
+                password=password,
+                language=language,
+                language_mode=language_mode,
+                languages=languages,
+                language_usage=language_usage,
+                profile=OCRProfile.OCR_TEXT_V2,
+                routing_policy=routing_policy,
+                cancellation_check=cancellation_check,
+                page_timeout_seconds=page_timeout_seconds,
+                page_progress_callback=page_progress_callback,
+            )
+            extracted = True
+        return apply_region_markup(
+            input_path,
+            output_path,
+            action=selected_action,
+            regions=selected_regions,
+            mode=selected_mode,
+            result=canonical_result,
+            document_result_reused=reused,
+            extraction_performed=extracted,
+            password=password,
             cancellation_check=cancellation_check,
             progress_callback=progress_callback,
         )

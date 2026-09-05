@@ -6,11 +6,24 @@ from .engine.errors import (
     AmbiguousSelectionError,
     EngineUnavailableError,
     MarkupError,
+    OCRCancellationError,
     OCRTimeoutError,
     TextNotFoundError,
     WordGeometryUnavailableError,
 )
-from .engine.markup import MarkupAction, MarkupExecutionResult, MarkupMode, MarkupSelection, MarkupSourceType
+from .engine.contracts import DocumentResult, PageGeometry, Rect
+from .engine.markup import (
+    MarkupAction,
+    MarkupColor,
+    MarkupExecutionResult,
+    MarkupMode,
+    MarkupRegion,
+    MarkupRegionStatus,
+    MarkupSelection,
+    MarkupSourceType,
+    RegionMarkupExecutionResult,
+    ResolvedMarkupRegion,
+)
 from .engine.validation import OCRProfile
 
 __all__ = [
@@ -18,17 +31,26 @@ __all__ = [
     "AmbiguousSelectionError",
     "DocumentEngine",
     "DocumentProcessor",
+    "DocumentResult",
     "EngineConfiguration",
     "RasterDpiMetadataPolicy",
     "EngineUnavailableError",
     "MarkupAction",
+    "MarkupColor",
     "MarkupError",
     "MarkupExecutionResult",
     "MarkupMode",
+    "MarkupRegion",
+    "MarkupRegionStatus",
     "MarkupSelection",
     "MarkupSourceType",
     "OCRTimeoutError",
     "OCRProfile",
+    "OCRCancellationError",
+    "Rect",
+    "PageGeometry",
+    "RegionMarkupExecutionResult",
+    "ResolvedMarkupRegion",
     "TextNotFoundError",
     "WordGeometryUnavailableError",
 ]
