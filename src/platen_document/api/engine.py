@@ -336,13 +336,15 @@ class DocumentProcessor:
         page_progress_callback: Callable[[int, int, object], None] | None = None,
         progress_callback: Callable[[int, int], None] | None = None,
     ) -> RegionMarkupExecutionResult:
-        """Apply markup to typed page rectangles using canonical PDF geometry.
+        """Apply markup to typed visible page rectangles with source-aware geometry.
 
         ``MarkupMode.MANUAL`` writes the supplied rectangles directly and never
         extracts text.  OCR-aware modes either reuse a compatible public
         :class:`DocumentResult` or make exactly one ``extract_text`` call.
         ``MarkupRegion.page_number`` is one-based; its rectangle is in visible
-        CropBox-relative PDF points with a top-left origin.
+        CropBox-relative PDF points with a top-left origin.  Native text
+        selection derotates that input rectangle for PyMuPDF intersection;
+        OCR selection preserves its existing visible geometry.
         """
         selected_action = action if isinstance(action, MarkupAction) else MarkupAction(str(action))
         selected_mode = mode if isinstance(mode, MarkupMode) else MarkupMode(str(mode))

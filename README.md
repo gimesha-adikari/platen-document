@@ -3,9 +3,9 @@
 `platen-document` is a standalone local Python document-processing SDK copied
 from PDFNest's proven local OCR V2 engine.
 
-The first release is parity-focused. It is intentionally not an OCR-quality
-redesign and does not change the current detector, structure heuristics,
-geometry, rendering, or validation contracts.
+The 0.1.x releases are parity-focused. They are intentionally not an
+OCR-quality redesign and do not change the current detector, structure
+heuristics, rendering, or validation contracts.
 
 ## Included capabilities
 
@@ -75,6 +75,13 @@ regions annotate directly without OCR. OCR-aware regions can reuse a public
 cancellation, and real annotation progress are supported. See
 [the region markup API guide](docs/region_markup.md) for the full coordinate,
 password, result, and overlap contract.
+
+Version 0.1.1 fixes native rotated-page region selection without changing the
+public visible-region API or OCR/scanned geometry behavior. Native PyMuPDF word
+boxes remain in unrotated PDF coordinates; the region selector maps only the
+visible input rectangle into that native space before intersection. OCR boxes
+remain in their existing visible space, and annotation rectangles are written
+once in canonical PDF coordinates.
 
 ## Configuration and system dependencies
 

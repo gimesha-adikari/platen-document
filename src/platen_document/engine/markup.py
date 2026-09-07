@@ -24,7 +24,7 @@ from .errors import (
     WordGeometryUnavailableError,
     TextNotFoundError,
 )
-from .geometry import clamp_rect
+from .geometry import clamp_rect, visible_rect_to_native_pdf
 from .orchestration import OCRV2Worker
 from .routing import RoutePolicy
 from .validation import OCRProfile
@@ -344,7 +344,13 @@ def select_regions(
     *,
     mode: MarkupMode = MarkupMode.SMART,
 ) -> tuple[MarkupSelection, ...]:
-    """Resolve visible page rectangles against canonical word geometry."""
+    """Resolve visible page rectangles against source-aware word geometry.
+
+    Public boxes are always visible CropBox-relative rectangles.  Native
+    PyMuPDF words remain in unrotated PDF coordinates, so only a native page's
+    input rectangle is derotated for intersection.  OCR word boxes are already
+    visible and pass through unchanged.
+    """
     if mode is MarkupMode.MANUAL:
         raise ValueError("MarkupMode.MANUAL does not resolve canonical document words")
     selections: list[MarkupSelection] = []
@@ -366,6 +372,8 @@ def select_regions(
                 raise WordGeometryUnavailableError("canonical OCR result has no genuine word geometry")
             continue
         region = Rect(x, y, width, height)
+        if _source_type(page) is MarkupSourceType.NATIVE:
+            region = visible_rect_to_native_pdf(region, page.geometry)
         selected = tuple(
             (index, word)
             for index, word in enumerate(words)

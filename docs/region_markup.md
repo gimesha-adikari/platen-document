@@ -43,6 +43,36 @@ negative-area rectangles resolve as `EMPTY`; rectangles with no visible area
 or a page number beyond the PDF resolve as `OUT_OF_BOUNDS`. Page numbers below
 one are rejected when constructing `MarkupRegion`.
 
+The public input space is deliberately distinct from the source geometry used
+for word intersection:
+
+| Space | Meaning |
+| --- | --- |
+| Visible region | The caller's rotated CropBox-relative rectangle, top-left origin, X right, Y down. |
+| Native word geometry | PyMuPDF `page.get_text("words")` boxes in unrotated CropBox-relative PDF coordinates. |
+| OCR word geometry | Raster/OCR boxes in the visible rotated CropBox-relative space. |
+| Annotation geometry | Canonical unrotated PDF coordinates consumed by PyMuPDF annotation writers. |
+
+For native pages, the selector maps the visible region through the page
+rotation into native PDF space before intersecting native words. The selected
+native word boxes are already in annotation space, so they are written without
+a second transform. For OCR/scanned pages, the existing visible OCR boxes and
+selection behavior are preserved. This source-aware boundary is the 0.1.1
+repair for the 0.1.0 native rotated-page defect; callers must not add a
+frontend rotation or derotation.
+
+For a page with visible width `W`, visible height `H`, and rectangle
+`(x, y, width, height)`, the native mapping is:
+
+- 0°: `(x, y, width, height)`;
+- 90°: `(y, W - (x + width), height, width)`;
+- 180°: `(W - (x + width), H - (y + height), width, height)`; and
+- 270°: `(H - (y + height), x, height, width)`.
+
+These mappings correspond to PyMuPDF's `rotation_matrix` and
+`derotation_matrix` for the visible `page.rect`; they also work with a
+non-zero CropBox because the SDK geometry is CropBox-relative.
+
 ## Modes and OCR work
 
 `MarkupMode.MANUAL` annotates each clipped input rectangle directly. It does

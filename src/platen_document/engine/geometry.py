@@ -81,6 +81,40 @@ def clamp_rect(rect: Rect, geometry: PageGeometry) -> Rect:
     return Rect(x0, y0, x1 - x0, y1 - y0)
 
 
+def visible_rect_to_native_pdf(rect: Rect, geometry: PageGeometry) -> Rect:
+    """Map a visible CropBox rectangle into PyMuPDF's unrotated PDF space.
+
+    ``PageGeometry`` describes the visible, rotated page while native
+    ``page.get_text("words")`` boxes are reported in the unrotated CropBox
+    coordinate space.  OCR adapters already emit visible rectangles, so this
+    conversion is intentionally a native-source-only boundary operation.
+    """
+
+    rotation = normalize_rotation(geometry.rotation)
+    if rotation == 0:
+        return rect
+    if rotation == 90:
+        return Rect(
+            x=rect.y,
+            y=geometry.width - rect.x1,
+            width=rect.height,
+            height=rect.width,
+        )
+    if rotation == 180:
+        return Rect(
+            x=geometry.width - rect.x1,
+            y=geometry.height - rect.y1,
+            width=rect.width,
+            height=rect.height,
+        )
+    return Rect(
+        x=geometry.height - rect.y1,
+        y=rect.x,
+        width=rect.height,
+        height=rect.width,
+    )
+
+
 @dataclass(frozen=True)
 class PreparedRaster:
     image: Image.Image
