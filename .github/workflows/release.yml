@@ -32,7 +32,8 @@ jobs:
             tesseract-ocr \
             tesseract-ocr-eng \
             tesseract-ocr-sin \
-            tesseract-ocr-tam
+            tesseract-ocr-tam \
+            qpdf
 
       - name: Verify release tag and version immutability
         run: |
