@@ -30,7 +30,9 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
             tesseract-ocr \
-            tesseract-ocr-eng
+            tesseract-ocr-eng \
+            tesseract-ocr-sin \
+            tesseract-ocr-tam
 
       - name: Verify release tag and version immutability
         run: |
