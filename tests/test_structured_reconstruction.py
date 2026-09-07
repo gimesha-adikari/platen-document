@@ -85,9 +85,8 @@ def _synthetic_page(lines: list[tuple[str, float, list[tuple[str, float]]]]) -> 
 
 
 def test_native_document_uses_canonical_structured_schema() -> None:
-    result = DocumentProcessor().extract_document(
-        "/home/gimesha/My_Projects/platen/pdfnest/tests/fixtures/normal_text.pdf"
-    )
+    fixture_path = Path(__file__).parent / "fixtures" / "normal_text.pdf"
+    result = DocumentProcessor().extract_document(fixture_path)
     assert result.schema_version == "ocr_v2_structured_document.v1"
     assert result.validation["valid"] is True
     assert all(page.processing_source == "NATIVE_EXTRACTION" for page in result.pages)
