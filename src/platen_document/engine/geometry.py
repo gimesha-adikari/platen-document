@@ -85,9 +85,11 @@ def visible_rect_to_native_pdf(rect: Rect, geometry: PageGeometry) -> Rect:
     """Map a visible CropBox rectangle into PyMuPDF's unrotated PDF space.
 
     ``PageGeometry`` describes the visible, rotated page while native
-    ``page.get_text("words")`` boxes are reported in the unrotated CropBox
-    coordinate space.  OCR adapters already emit visible rectangles, so this
-    conversion is intentionally a native-source-only boundary operation.
+    ``page.get_text("words")`` boxes and annotation writers use the
+    unrotated CropBox coordinate space.  OCR adapters already emit visible
+    rectangles, so callers must use this conversion only when crossing from
+    the public visible-region contract into a native PDF writer or native
+    word-intersection operation.
     """
 
     rotation = normalize_rotation(geometry.rotation)

@@ -71,12 +71,17 @@ For a page with visible width `W`, visible height `H`, and rectangle
 
 These mappings correspond to PyMuPDF's `rotation_matrix` and
 `derotation_matrix` for the visible `page.rect`; they also work with a
-non-zero CropBox because the SDK geometry is CropBox-relative.
+non-zero CropBox because the SDK geometry is CropBox-relative. Version 0.1.1
+uses this mapping for native word intersection, and version 0.1.2 also uses it
+at the manual annotation-writer boundary. In both cases the conversion occurs
+exactly once.
 
 ## Modes and OCR work
 
-`MarkupMode.MANUAL` annotates each clipped input rectangle directly. It does
-not call text extraction, OCR, indexing, or any background process.
+`MarkupMode.MANUAL` annotates each clipped input rectangle without calling text
+extraction, OCR, indexing, or any background process. The visible input is
+mapped exactly once into canonical unrotated PDF coordinates at the PyMuPDF
+annotation boundary, including for rotated pages.
 
 `SMART`, `OCR`, and `NATIVE` are OCR-aware modes. They resolve canonical words
 that intersect a region, preserve canonical reading order and word IDs, group

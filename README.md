@@ -76,12 +76,12 @@ cancellation, and real annotation progress are supported. See
 [the region markup API guide](docs/region_markup.md) for the full coordinate,
 password, result, and overlap contract.
 
-Version 0.1.1 fixes native rotated-page region selection without changing the
-public visible-region API or OCR/scanned geometry behavior. Native PyMuPDF word
-boxes remain in unrotated PDF coordinates; the region selector maps only the
-visible input rectangle into that native space before intersection. OCR boxes
-remain in their existing visible space, and annotation rectangles are written
-once in canonical PDF coordinates.
+Version 0.1.1 fixed native rotated-page region selection without changing the
+public visible-region API or OCR/scanned geometry behavior. Version 0.1.2
+extends that same coordinate contract to manual region annotation: the visible
+input rectangle is mapped exactly once into canonical PDF coordinates at the
+PyMuPDF writer boundary. Native PyMuPDF word boxes remain in unrotated PDF
+coordinates; OCR boxes remain in their existing visible space.
 
 ## Configuration and system dependencies
 

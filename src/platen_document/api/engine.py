@@ -338,8 +338,9 @@ class DocumentProcessor:
     ) -> RegionMarkupExecutionResult:
         """Apply markup to typed visible page rectangles with source-aware geometry.
 
-        ``MarkupMode.MANUAL`` writes the supplied rectangles directly and never
-        extracts text.  OCR-aware modes either reuse a compatible public
+        ``MarkupMode.MANUAL`` maps the supplied visible rectangles once into
+        canonical PDF coordinates at the annotation boundary and never
+        extracts text. OCR-aware modes either reuse a compatible public
         :class:`DocumentResult` or make exactly one ``extract_text`` call.
         ``MarkupRegion.page_number`` is one-based; its rectangle is in visible
         CropBox-relative PDF points with a top-left origin.  Native text

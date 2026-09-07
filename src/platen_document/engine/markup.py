@@ -506,7 +506,8 @@ def apply_region_markup(
     """Resolve typed regions and write annotations without invoking OCR itself.
 
     Callers supply a canonical result for OCR-aware modes.  Manual mode does
-    not need one and writes the clipped rectangles directly.
+    not need one; it maps each clipped visible rectangle into the canonical
+    PDF coordinate space before writing it with PyMuPDF.
     """
     if mode is MarkupMode.MANUAL and result is not None:
         result = None
@@ -543,7 +544,14 @@ def apply_region_markup(
                     resolved.append(_empty_resolution(region_index, region, status))
                 elif mode is MarkupMode.MANUAL:
                     _check(cancellation_check)
-                    _annotate_rect(page, clipped, action, region.color)
+                    # ``MarkupRegion.rect`` is always visible, rotated
+                    # CropBox-relative geometry.  PyMuPDF annotation writers
+                    # consume the unrotated PDF coordinate space, just as
+                    # native word boxes do.  Keep the conversion at this
+                    # writer boundary so OCR geometry and the public region
+                    # contract remain unchanged.
+                    annotation_rect = visible_rect_to_native_pdf(clipped, geometry)
+                    _annotate_rect(page, annotation_rect, action, region.color)
                     resolved.append(
                         ResolvedMarkupRegion(
                             region_index=region_index,
@@ -553,7 +561,7 @@ def apply_region_markup(
                             resolved_rect=clipped,
                             color=region.color,
                             status=MarkupRegionStatus.ANNOTATED,
-                            annotation_rects=(clipped,),
+                            annotation_rects=(annotation_rect,),
                             annotation_count=1,
                         )
                     )
