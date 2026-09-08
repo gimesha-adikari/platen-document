@@ -3,9 +3,10 @@
 `platen-document` is a standalone local Python document-processing SDK copied
 from PDFNest's proven local OCR V2 engine.
 
-The 0.1.x releases are parity-focused. They are intentionally not an
-OCR-quality redesign and do not change the current detector, structure
-heuristics, rendering, or validation contracts.
+The 0.1.x releases are parity-focused for existing default consumers. They
+are intentionally not a general OCR-quality redesign; explicitly documented
+opt-in capabilities may add bounded structure recovery without changing the
+default detector, rendering, or validation contracts.
 
 ## Included capabilities
 
@@ -64,6 +65,24 @@ default behavior of existing consumers.
 The package can process local files without PDFNest backend, PostgreSQL,
 Redis, Dramatiq, frontend, HTTP services, authentication, billing, or
 application storage.
+
+For upright scanned pages containing a clear ruled table, table-aware
+structured extraction is an explicit opt-in because it can change OCR
+segmentation and structured output:
+
+```python
+from platen_document import DocumentProcessor, EngineConfiguration
+
+processor = DocumentProcessor(EngineConfiguration(
+    enable_scanned_table_recognition=True,
+))
+structured = processor.extract_document("scanned-table.pdf")
+```
+
+This bounded path removes detected long ruling lines before the same single
+Tesseract pass and reconstructs conservative aligned numeric rows. It is not a
+promise of arbitrary scanned-table recognition. The default is `False`, so
+other structured and OCR-text consumers retain their existing behavior.
 
 ## Region-based markup
 

@@ -47,6 +47,7 @@ class EngineConfiguration:
     raster_dpi_metadata_policy: RasterDpiMetadataPolicy = RasterDpiMetadataPolicy.EMBED_DPI
     max_raster_pixels: int | None = None
     structured_max_raster_pixels: int | None = None
+    enable_scanned_table_recognition: bool = False
 
     def __post_init__(self) -> None:
         object.__setattr__(
@@ -125,17 +126,28 @@ class DocumentProcessor:
         if structured_limit is None:
             structured_limit = structured_max_raster_pixels()
         self._structured_processor = StructuredDocumentProcessor(
-            ocr_worker=self._make_worker(structured_limit)
+            ocr_worker=self._make_worker(
+                structured_limit,
+                table_aware_ocr=self.config.enable_scanned_table_recognition,
+            ),
+            enable_scanned_table_recognition=self.config.enable_scanned_table_recognition,
         )
         self._text_renderer = TextRenderer()
         self._searchable_pdf_renderer = SearchablePdfRenderer()
 
-    def _make_worker(self, max_raster_pixels: int | None, routing_policy: str = "AUTO") -> OCRV2Worker:
+    def _make_worker(
+        self,
+        max_raster_pixels: int | None,
+        routing_policy: str = "AUTO",
+        *,
+        table_aware_ocr: bool = False,
+    ) -> OCRV2Worker:
         tesseract = TesseractAdapter(
             "eng",
             timeout=self.config.tesseract_timeout,
             tessdata_dir=self.config.tessdata_dir,
             tesseract_binary=self.config.tesseract_binary,
+            table_aware_ocr=table_aware_ocr,
         )
         return OCRV2Worker(
             adapters={
@@ -148,6 +160,7 @@ class DocumentProcessor:
             ),
             route_policy=_route_policy(routing_policy),
             max_raster_pixels=max_raster_pixels,
+            table_aware_ocr=table_aware_ocr,
         )
 
     def extract_text(

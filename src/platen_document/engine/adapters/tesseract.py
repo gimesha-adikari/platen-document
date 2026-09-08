@@ -20,6 +20,7 @@ from ..language_policy import (
     LanguageProbe,
     OCRLanguagePolicy,
 )
+from ..table_ocr import prepare_table_ocr_image
 from .._compat import acquire_tesseract_capacity, run_hardened_subprocess
 from .base import EngineAdapter, EngineAvailability, provenance_from_description
 
@@ -34,6 +35,7 @@ class TesseractAdapter(EngineAdapter):
         timeout: float = 300.0,
         tessdata_dir: str | None = None,
         tesseract_binary: str | None = None,
+        table_aware_ocr: bool = False,
     ) -> None:
         if not languages or not languages.strip() or languages.strip().lower() in {"auto", "automatic", "detect"}:
             raise ConfigurationError("TesseractAdapter requires a resolved explicit language policy")
@@ -45,6 +47,7 @@ class TesseractAdapter(EngineAdapter):
         self.timeout = timeout
         self.tessdata_dir = Path(tessdata_dir or os.getenv("TESSDATA_PREFIX", "")) if (tessdata_dir or os.getenv("TESSDATA_PREFIX")) else None
         self.tesseract_binary = tesseract_binary or os.getenv("TESSERACT_BINARY", "tesseract")
+        self.table_aware_ocr = table_aware_ocr
         self._ready = False
 
     def describe(self) -> dict[str, Any]:
@@ -52,7 +55,7 @@ class TesseractAdapter(EngineAdapter):
             "id": "tesseract_v2",
             "version": "system-tesseract",
             "source": "tesseract-tsv",
-            "configuration": {"languages": list(self.policy.languages), "language_expression": self.languages, "timeout_seconds": self.timeout},
+            "configuration": {"languages": list(self.policy.languages), "language_expression": self.languages, "timeout_seconds": self.timeout, "table_aware_ocr": self.table_aware_ocr},
             "capabilities": ["TEXT", "WORD_GEOMETRY", "LINE_GEOMETRY", "BLOCK_GEOMETRY", "CONFIDENCE", "LANGUAGE_METADATA", "READING_ORDER", "PAGE_INDEPENDENT"],
         }
 
@@ -121,8 +124,18 @@ class TesseractAdapter(EngineAdapter):
     def recognize_page(self, page_id: str, raster: PreparedRaster) -> UnnormalizedPageOutput:
         if not self.readiness():
             self.initialize()
+        ocr_image = raster.image
+        table_grid = None
+        # The conservative line detector is defined for the existing upright
+        # OCR image contract.  Preserve ordinary rotated-page OCR until an
+        # orientation-aware table path is designed and tested.
+        if self.table_aware_ocr and raster.geometry.rotation == 0:
+            ocr_image, table_grid = prepare_table_ocr_image(raster.image)
         with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as image_file:
-            image_file.write(raster.png_bytes)
+            if table_grid is None:
+                image_file.write(raster.png_bytes)
+            else:
+                ocr_image.save(image_file, format="PNG", dpi=(raster.dpi, raster.dpi))
             image_path = image_file.name
         try:
             env = os.environ.copy()
@@ -134,7 +147,10 @@ class TesseractAdapter(EngineAdapter):
             data_dir = self._data_dir()
             if data_dir:
                 env["TESSDATA_PREFIX"] = str(data_dir)
-            command = [self.tesseract_binary, image_path, "stdout", "-l", self.languages, "tsv"]
+            command = [self.tesseract_binary, image_path, "stdout", "-l", self.languages]
+            if table_grid is not None:
+                command.extend(["--psm", "6"])
+            command.append("tsv")
             with acquire_tesseract_capacity(timeout=self.timeout):
                 completed = run_hardened_subprocess(command, timeout=self.timeout, env=env)
             if completed.returncode != 0:
