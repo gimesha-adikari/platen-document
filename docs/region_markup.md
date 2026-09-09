@@ -57,9 +57,12 @@ For native pages, the selector maps the visible region through the page
 rotation into native PDF space before intersecting native words. The selected
 native word boxes are already in annotation space, so they are written without
 a second transform. For OCR/scanned pages, the existing visible OCR boxes and
-selection behavior are preserved. This source-aware boundary is the 0.1.1
-repair for the 0.1.0 native rotated-page defect; callers must not add a
-frontend rotation or derotation.
+selection behavior are preserved for region intersection. After selection,
+those visible OCR and hybrid line rectangles are mapped exactly once into
+native annotation coordinates at the PyMuPDF writer boundary. This keeps the
+public region contract visible-space while ensuring the generated annotation
+is placed in the unrotated PDF space. Callers must not add a frontend rotation
+or derotation.
 
 For a page with visible width `W`, visible height `H`, and rectangle
 `(x, y, width, height)`, the native mapping is:
@@ -72,9 +75,10 @@ For a page with visible width `W`, visible height `H`, and rectangle
 These mappings correspond to PyMuPDF's `rotation_matrix` and
 `derotation_matrix` for the visible `page.rect`; they also work with a
 non-zero CropBox because the SDK geometry is CropBox-relative. Version 0.1.1
-uses this mapping for native word intersection, and version 0.1.2 also uses it
-at the manual annotation-writer boundary. In both cases the conversion occurs
-exactly once.
+uses this mapping for native word intersection, version 0.1.2 also uses it at
+the manual annotation-writer boundary, and OCR/hybrid selection annotations
+use the same mapping at the annotation-writer boundary. In every
+source-aware path the conversion occurs exactly once.
 
 ## Modes and OCR work
 

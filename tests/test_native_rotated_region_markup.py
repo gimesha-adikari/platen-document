@@ -249,18 +249,27 @@ def test_native_overlapping_regions_preserve_exact_pairing_and_colors(tmp_path: 
 
 @pytest.mark.parametrize("rotation", ROTATIONS)
 @pytest.mark.parametrize("mode", (MarkupMode.SMART, MarkupMode.OCR))
-def test_ocr_visible_geometry_is_not_derotated(rotation: int, mode: MarkupMode, tmp_path: Path) -> None:
+@pytest.mark.parametrize("action,expected_type", ACTIONS)
+def test_ocr_visible_geometry_maps_annotation_back_to_native_space(
+    rotation: int,
+    mode: MarkupMode,
+    action: MarkupAction,
+    expected_type: str,
+    tmp_path: Path,
+) -> None:
     source = tmp_path / f"ocr-{rotation}.pdf"
-    output = tmp_path / f"ocr-{rotation}-{mode.value}.pdf"
+    output = tmp_path / f"ocr-{rotation}-{mode.value}-{action.value}.pdf"
     _make_native_pdf(source, (rotation,))
     visible_result = _visible_ocr_result(source)
     with fitz.open(source) as document:
-        region = MarkupRegion(1, _visible_text_region(document[0]))
+        page = document[0]
+        region = MarkupRegion(1, _visible_text_region(page))
+        canonical_text = _canonical_text_rect(page)
 
     result = DocumentProcessor().apply_markup_regions(
         source,
         output,
-        action=MarkupAction.HIGHLIGHT,
+        action=action,
         mode=mode,
         result=visible_result,
         regions=(region,),
@@ -269,4 +278,19 @@ def test_ocr_visible_geometry_is_not_derotated(rotation: int, mode: MarkupMode, 
     assert result.document_result_reused is True
     assert result.regions[0].status is MarkupRegionStatus.ANNOTATED
     assert result.regions[0].selected_text == TEXT
+    resolved = result.regions[0]
+    assert resolved.annotation_rects
+    annotation_union = fitz.Rect(
+        min(rect.x for rect in resolved.annotation_rects),
+        min(rect.y for rect in resolved.annotation_rects),
+        max(rect.x1 for rect in resolved.annotation_rects),
+        max(rect.y1 for rect in resolved.annotation_rects),
+    )
+    assert annotation_union.x0 == pytest.approx(canonical_text.x0, abs=0.01)
+    assert annotation_union.y0 == pytest.approx(canonical_text.y0, abs=0.01)
+    assert annotation_union.x1 == pytest.approx(canonical_text.x1, abs=0.01)
+    assert annotation_union.y1 == pytest.approx(canonical_text.y1, abs=0.01)
     _assert_qpdf_valid(output)
+    with fitz.open(output) as document:
+        annotation_types = [annotation.type[1] for page in document for annotation in (page.annots() or ())]
+        assert annotation_types == [expected_type]

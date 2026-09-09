@@ -489,6 +489,26 @@ def _annotate_rect(page: fitz.Page, rect: Rect, action: MarkupAction, color: Mar
         raise AnnotationWriteError(f"could not write {action.value} annotation") from exc
 
 
+def _annotation_rects_for_selection(page: fitz.Page, selection: MarkupSelection) -> tuple[Rect, ...]:
+    """Return selection rectangles in the native PDF space used by PyMuPDF.
+
+    Native word geometry is already expressed in the unrotated PDF coordinate
+    space.  OCR and hybrid word geometry is expressed in the public,
+    visible CropBox-relative space so it can be intersected with the
+    visible-region API contract.  Convert those selections exactly once at
+    the annotation-writing boundary.
+    """
+    if selection.source_type is MarkupSourceType.NATIVE:
+        return selection.group_rects
+
+    geometry = PageGeometry(
+        width=float(page.rect.width),
+        height=float(page.rect.height),
+        rotation=int(page.rotation) % 360,
+    )
+    return tuple(visible_rect_to_native_pdf(rect, geometry) for rect in selection.group_rects)
+
+
 def apply_region_markup(
     input_path: str | Path,
     output_path: str | Path,
@@ -582,6 +602,7 @@ def apply_region_markup(
                     else:
                         _check(cancellation_check)
                         _annotate(page, selection, action, region.color)
+                        annotation_rects = _annotation_rects_for_selection(page, selection)
                         resolved.append(
                             ResolvedMarkupRegion(
                                 region_index=region_index,
@@ -592,7 +613,7 @@ def apply_region_markup(
                                 color=region.color,
                                 status=MarkupRegionStatus.ANNOTATED,
                                 selection=selection,
-                                annotation_rects=selection.group_rects,
+                                annotation_rects=annotation_rects,
                                 annotation_count=1,
                             )
                         )
@@ -620,9 +641,13 @@ def apply_region_markup(
 
 def _annotate(page: fitz.Page, selection: MarkupSelection, action: MarkupAction, color: tuple[float, float, float]) -> None:
     try:
-        # PyMuPDF accepts rectangles here and converts them to axis-aligned
-        # annotation quads while retaining the canonical PDF-point geometry.
-        quads = [fitz.Rect(rect.x, rect.y, rect.x1, rect.y1) for rect in selection.group_rects]
+        # PyMuPDF consumes unrotated/native PDF-point geometry.  Native
+        # selections already use that space; OCR/hybrid selections are
+        # visible-space geometry and are projected once at this boundary.
+        quads = [
+            fitz.Rect(rect.x, rect.y, rect.x1, rect.y1)
+            for rect in _annotation_rects_for_selection(page, selection)
+        ]
         if action is MarkupAction.HIGHLIGHT:
             annotation = page.add_highlight_annot(quads)
         elif action is MarkupAction.UNDERLINE:
