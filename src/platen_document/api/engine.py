@@ -177,13 +177,16 @@ class DocumentProcessor:
         cancellation_check: Callable[[], None] | None = None,
         page_timeout_seconds: float | None = None,
         page_progress_callback: Callable[[int, int, object], None] | None = None,
+        page_indices: Sequence[int] | None = None,
     ) -> DocumentResult:
         """Return the copied canonical OCR result for a local PDF.
 
         ``routing_policy`` and the lifecycle callbacks are thin pass-throughs
         for application consumers that need the same route and cooperative
         cancellation contract as the original worker.  They do not add
-        PDFNest job or storage concerns to the SDK.
+        PDFNest job or storage concerns to the SDK. When ``page_indices`` is
+        supplied, only those zero-based pages are processed and the result
+        retains the source document's full page count plus original indexes.
         """
         selected_policy = _route_policy(routing_policy)
         worker = self._ocr_worker if selected_policy == RoutePolicy() else self._make_worker(self.config.max_raster_pixels, routing_policy)
@@ -198,6 +201,7 @@ class DocumentProcessor:
             cancellation_check=cancellation_check,
             page_timeout_seconds=page_timeout_seconds,
             page_progress_callback=page_progress_callback,
+            page_indices=page_indices,
         )
 
     def extract_document(
@@ -363,6 +367,9 @@ class DocumentProcessor:
         selected_action = action if isinstance(action, MarkupAction) else MarkupAction(str(action))
         selected_mode = mode if isinstance(mode, MarkupMode) else MarkupMode(str(mode))
         selected_regions = tuple(regions)
+        affected_page_indices = tuple(
+            sorted({region.page_number - 1 for region in selected_regions if region.page_number > 0})
+        )
         reused = selected_mode is not MarkupMode.MANUAL and result is not None
         extracted = False
         canonical_result = result
@@ -379,6 +386,7 @@ class DocumentProcessor:
                 cancellation_check=cancellation_check,
                 page_timeout_seconds=page_timeout_seconds,
                 page_progress_callback=page_progress_callback,
+                page_indices=affected_page_indices,
             )
             extracted = True
         return apply_region_markup(

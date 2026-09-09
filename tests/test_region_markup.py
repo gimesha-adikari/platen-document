@@ -247,7 +247,32 @@ def test_ocr_aware_region_extracts_once_with_public_controls(tmp_path: Path) -> 
     assert calls[0]["profile"].value == "OCR_TEXT_V2"
     assert calls[0]["routing_policy"] == "FAST"
     assert calls[0]["page_timeout_seconds"] == 12.0
+    assert calls[0]["page_indices"] == (0,)
     assert page_progress == []
+
+
+def test_page_scoped_result_keeps_original_page_index_and_full_pdf(tmp_path: Path) -> None:
+    source = tmp_path / "source.pdf"
+    output = tmp_path / "marked.pdf"
+    _make_pdf(source, pages=3)
+    full = _canonical_result(source, pages=3)
+    page_three_only = replace(full, pages=(full.pages[2],))
+
+    result = DocumentProcessor.__new__(DocumentProcessor).apply_markup_regions(
+        source,
+        output,
+        action="highlight",
+        result=page_three_only,
+        regions=(MarkupRegion(3, Rect(30, 25, 110, 30), region_id="page-three"),),
+    )
+
+    assert result.affected_pages == (3,)
+    assert result.page_count == 3
+    assert result.regions[0].status is MarkupRegionStatus.ANNOTATED
+    document = fitz.open(output)
+    assert len(document) == 3
+    assert [len(list(page.annots() or ())) for page in document] == [0, 0, 1]
+    document.close()
 
 
 def test_multiple_overlapping_and_multipage_regions_are_independent(tmp_path: Path) -> None:

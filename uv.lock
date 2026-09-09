@@ -571,7 +571,7 @@ wheels = [
 
 [[package]]
 name = "platen-document"
-version = "0.1.4"
+version = "0.1.7"
 source = { editable = "." }
 dependencies = [
     { name = "pdfplumber" },
