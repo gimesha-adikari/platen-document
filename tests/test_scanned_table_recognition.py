@@ -28,6 +28,10 @@ _ALIGNMENT_TABLE_ROWS = (
 )
 
 
+def _font(size: int) -> ImageFont.FreeTypeFont:
+    return ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", size)
+
+
 def _centered_text(draw: ImageDraw.ImageDraw, box: tuple[int, int, int, int], text: str, font: ImageFont.FreeTypeFont) -> None:
     left, top, right, bottom = box
     text_box = draw.textbbox((0, 0), text, font=font)
@@ -160,6 +164,35 @@ def test_public_sdk_preserves_textual_header_over_right_aligned_numeric_cells(tm
     )
     first_body_y = min(cell["bbox"]["y"] for cell in table.data["rows"][0] if cell["bbox"])
     assert table.bbox["y"] < first_body_y
+
+
+def test_public_sdk_does_not_erase_filled_dark_page_background(tmp_path: Path) -> None:
+    """A bordered dark scan must not be mistaken for a table grid before OCR."""
+
+    image = Image.new("RGB", (960, 640), (48, 96, 150))
+    draw = ImageDraw.Draw(image)
+    draw.rectangle((48, 48, 912, 592), outline="white", width=10)
+    draw.text((102, 210), "IMAGE ALPHA", fill="white", font=_font(38))
+    draw.text((102, 305), "PLATEN-ACCEPTANCE-20260913", fill="white", font=_font(28))
+    draw.text((102, 365), "OCR TARGET 8724", fill="white", font=_font(28))
+
+    pdf_path = tmp_path / "dark-bordered-scan.pdf"
+    encoded = io.BytesIO()
+    image.save(encoded, format="PNG")
+    with fitz.open() as document:
+        page = document.new_page(width=600, height=450)
+        page.insert_image(page.rect, stream=encoded.getvalue())
+        document.save(str(pdf_path))
+
+    result = DocumentProcessor(EngineConfiguration(
+        raster_dpi=200,
+        enable_scanned_table_recognition=True,
+    )).extract_document(pdf_path, routing_policy="FAST")
+    text = "\n".join(element.text for page in result.pages for element in page.elements)
+    assert result.validation["valid"] is True
+    assert "IMAGE ALPHA" in text
+    assert "PLATEN-ACCEPTANCE-20260913" in text
+    assert "OCR TARGET 8724" in text
 
 
 def test_scanned_table_recognition_is_structured_opt_in() -> None:
