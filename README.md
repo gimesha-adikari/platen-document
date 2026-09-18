@@ -1,3 +1,5 @@
+![Project cover](cover.png)
+
 # platen-document
 
 `platen-document` is a standalone local Python document-processing SDK copied
