@@ -106,19 +106,27 @@ marked = processor.apply_markup_regions(
 )
 ```
 
-The SDK verifies supplied-result page coverage, canonical page order, visible
-page dimensions, rotation, and coordinate-space label before reuse. It cannot
-prove content identity without an application-owned source identity, so the
-caller must ensure that the result belongs to the same input artifact.
+The SDK verifies the supplied-result source page count, unique in-range page
+indexes, visible page dimensions, rotation, and coordinate-space label before
+reuse. A supplied result may be full-document or page-scoped; page-scoped
+results retain the source PDF's original `page_index` values and are valid for
+the regions they cover. It cannot prove content identity without an
+application-owned source identity, so the caller must ensure that the result
+belongs to the same input artifact.
 
 Without a supplied result, an OCR-aware call performs exactly one public
-`extract_text` invocation with the passed password, language, routing policy,
-cancellation check, page timeout, and page-progress callback.
+`extract_text` invocation for the unique zero-based pages containing the
+regions. The returned page-scoped result is then used to resolve regions while
+the writer opens and saves the complete input PDF. The invocation receives the
+passed password, language, routing policy, cancellation check, page timeout,
+and page-progress callback; progress totals therefore describe affected pages,
+not the full document.
 
 ## Results, colors, cancellation, and progress
 
-`RegionMarkupExecutionResult` exposes the output path, total annotation count,
-per-region `ResolvedMarkupRegion` outcomes, selected text, canonical word IDs,
+`RegionMarkupExecutionResult` exposes the output path, full output `page_count`,
+one-based `affected_pages`, total annotation count, per-region
+`ResolvedMarkupRegion` outcomes, selected text, canonical word IDs,
 line-level annotation rectangles, and the supplied-result/extraction flags.
 Each `MarkupRegion` has its own RGB float color tuple in the inclusive range
 `0.0..1.0`.

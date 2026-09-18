@@ -199,6 +199,7 @@ class RegionMarkupExecutionResult:
     page_sources: tuple[dict[str, Any], ...]
     document_result_reused: bool
     extraction_performed: bool
+    affected_pages: tuple[int, ...] = ()
 
     @property
     def annotation_count(self) -> int:
@@ -216,6 +217,7 @@ class RegionMarkupExecutionResult:
             "annotation_count": self.annotation_count,
             "document_result_reused": self.document_result_reused,
             "extraction_performed": self.extraction_performed,
+            "affected_pages": list(self.affected_pages),
             "regions": [region.to_dict() for region in self.regions],
             "page_sources": list(self.page_sources),
         }
@@ -363,9 +365,11 @@ def select_regions(
             height = float(box.get("height", 0))
         except (TypeError, ValueError):
             continue
-        if page_index < 0 or page_index >= len(result.pages) or width <= 0 or height <= 0:
+        if page_index < 0 or width <= 0 or height <= 0:
             continue
-        page = result.pages[page_index]
+        page = next((candidate for candidate in result.pages if candidate.page_index == page_index), None)
+        if page is None:
+            continue
         words = _canonical_words(page, mode)
         if not words:
             if page.text.strip() and "WORD_GEOMETRY" not in page.capabilities:
@@ -421,11 +425,14 @@ def _check(cancellation_check: Callable[[], None] | None) -> None:
 
 def _validate_result_for_pdf(result: DocumentResult, document: fitz.Document) -> None:
     """Fail closed when a supplied canonical result cannot describe this PDF."""
-    if result.source.page_count != len(document) or len(result.pages) != len(document):
-        raise ValueError("provided DocumentResult page coverage does not match the input PDF")
-    if tuple(page.page_index for page in result.pages) != tuple(range(len(document))):
-        raise ValueError("provided DocumentResult pages are not in canonical order")
-    for index, result_page in enumerate(result.pages):
+    if result.source.page_count != len(document):
+        raise ValueError("provided DocumentResult source page count does not match the input PDF")
+    page_by_index: dict[int, Any] = {}
+    for result_page in result.pages:
+        if result_page.page_index < 0 or result_page.page_index >= len(document) or result_page.page_index in page_by_index:
+            raise ValueError("provided DocumentResult contains an invalid or duplicate page index")
+        page_by_index[result_page.page_index] = result_page
+    for index, result_page in page_by_index.items():
         page = document[index]
         geometry = PageGeometry(
             width=float(page.rect.width),
@@ -631,11 +638,12 @@ def apply_region_markup(
             else "CANONICAL_DOCUMENT_RESULT_REUSED" if document_result_reused else "EXTRACT_TEXT_ONCE_THEN_CANONICAL_REGION_SELECTION"
         ),
         output_path=str(Path(output_path)),
-        page_count=len(result.pages) if result is not None else page_count,
+        page_count=page_count,
         regions=tuple(resolved),
         page_sources=_page_sources(result) if result is not None else (),
         document_result_reused=document_result_reused,
         extraction_performed=extraction_performed,
+        affected_pages=tuple(sorted({region.page_number for region in regions if 1 <= region.page_number <= page_count})),
     )
 
 
