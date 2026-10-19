@@ -37,7 +37,7 @@ from .contracts import (
     PageResult,
     ResultCapability,
 )
-from .geometry import PreparedRaster
+from .geometry import PreparedRaster, effective_raster_limit, raster_env_int, raster_policy
 from .orchestration import OCRV2Worker
 from .adapters.tesseract import TesseractAdapter
 
@@ -71,7 +71,7 @@ def structured_max_pages() -> int:
 
 
 def structured_max_raster_pixels() -> int:
-    return _positive_env_int("OCR_V2_STRUCTURED_MAX_RASTER_PIXELS", DEFAULT_STRUCTURED_MAX_RASTER_PIXELS)
+    return effective_raster_limit(raster_env_int("OCR_V2_STRUCTURED_MAX_RASTER_PIXELS", DEFAULT_STRUCTURED_MAX_RASTER_PIXELS))
 
 
 def structured_page_timeout_seconds() -> float:
@@ -959,6 +959,8 @@ def _validate_result(pages: tuple[StructuredPage, ...]) -> dict[str, Any]:
     issues: list[dict[str, Any]] = []
     seen: set[str] = set()
     for page in pages:
+        if page.status == "FAILED":
+            issues.append({"code": "OCR_PAGE_FAILED", "page_index": page.page_index})
         page_ids = {element.element_id for element in page.elements}
         if len(page_ids) != len(page.elements):
             issues.append({"code": "DUPLICATE_ELEMENT_ID", "page_index": page.page_index})
@@ -1263,17 +1265,18 @@ class StructuredDocumentProcessor:
 
         if routing_policy in {"FAST", "LANGUAGE_FALLBACK"}:
             ocr_worker.router.policy = RoutePolicy(preferred_engine="tesseract_v2", fallback_engine="tesseract_v2")
-        ocr_result = ocr_worker.process_document(
-            source_path,
-            language=language,
-            language_mode=language_mode,
-            languages=languages,
-            language_usage=language_usage,
-            profile=OCRProfile.OCR_TEXT_V2,
-            cancellation_check=cancellation_check,
-            page_timeout_seconds=structured_page_timeout_seconds(),
-            page_progress_callback=None,
-        )
+        with raster_policy(structured_max_raster_pixels(), cancellation_check):
+            ocr_result = ocr_worker.process_document(
+                source_path,
+                language=language,
+                language_mode=language_mode,
+                languages=languages,
+                language_usage=language_usage,
+                profile=OCRProfile.OCR_TEXT_V2,
+                cancellation_check=cancellation_check,
+                page_timeout_seconds=structured_page_timeout_seconds(),
+                page_progress_callback=None,
+            )
         with fitz.open(str(source_path)) as document:
             base_font_size = calculate_document_base_font_size(document)
             plumber_doc = None
@@ -1339,7 +1342,8 @@ class StructuredDocumentProcessor:
                     page_warnings = tuple(warning for warning in warnings if warning.endswith(f":{page_index}"))
                     reading_order = tuple(element.element_id for element in elements)
                     geometry = {"width": ocr_page.geometry.width, "height": ocr_page.geometry.height, "rotation": ocr_page.geometry.rotation, "coordinate_space": ocr_page.geometry.coordinate_space}
-                    structured_page = StructuredPage(page_index, ocr_page.page_id, geometry, classification, processing_source, "BLANK" if not elements else "SUCCESS", tuple(elements), reading_order, tuple(sorted(page_caps)), page_warnings, {
+                    status = "FAILED" if ocr_page.status.value == "FAILED" else "BLANK" if not elements else "SUCCESS"
+                    structured_page = StructuredPage(page_index, ocr_page.page_id, geometry, classification, processing_source, status, tuple(elements), reading_order, tuple(sorted(page_caps)), page_warnings, {
                         "requested": list(ocr_page.language.requested_languages),
                         "detected": list(ocr_page.language.detected_languages),
                         "status": ocr_page.language.language_status,

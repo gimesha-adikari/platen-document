@@ -9,7 +9,13 @@ from typing import Callable, Mapping, Sequence
 
 from ..diagnostics.doctor import build_doctor_report
 from ..engine.adapters import PPOCRv6MediumAdapter, TesseractAdapter
-from ..engine.geometry import RasterDpiMetadataPolicy, RasterPreparer
+from ..engine.geometry import (
+    RasterDpiMetadataPolicy,
+    RasterPreparer,
+    effective_raster_limit,
+    raster_env_int,
+    validate_raster_dpi,
+)
 from ..engine.markup import (
     MarkupAction,
     MarkupExecutionResult,
@@ -36,8 +42,9 @@ from ..engine.contracts import DocumentResult
 class EngineConfiguration:
     """Optional local engine settings.
 
-    Defaults intentionally follow the copied PDFNest worker behavior.  The
-    SDK does not install system packages or fetch OCR models.
+    OCR defaults retain the extracted engine behavior; raster security limits
+    are mandatory even when application limits are omitted. The SDK does not
+    install system packages or fetch OCR models.
     """
 
     tesseract_binary: str | None = None
@@ -50,6 +57,8 @@ class EngineConfiguration:
     enable_scanned_table_recognition: bool = False
 
     def __post_init__(self) -> None:
+        validate_raster_dpi(self.raster_dpi)
+        effective_raster_limit(self.max_raster_pixels, self.structured_max_raster_pixels)
         object.__setattr__(
             self,
             "raster_dpi_metadata_policy",
@@ -60,9 +69,9 @@ class EngineConfiguration:
     def from_env(cls) -> "EngineConfiguration":
         """Read only neutral engine settings from the process environment."""
         timeout = _positive_float(os.getenv("PLATEN_DOCUMENT_TESSERACT_TIMEOUT"), 300.0)
-        dpi = _positive_int(os.getenv("PLATEN_DOCUMENT_RASTER_DPI"), 200)
-        max_pixels = _optional_positive_int(os.getenv("PLATEN_DOCUMENT_MAX_RASTER_PIXELS"))
-        structured_pixels = _optional_positive_int(os.getenv("PLATEN_DOCUMENT_STRUCTURED_MAX_RASTER_PIXELS"))
+        dpi = raster_env_int("PLATEN_DOCUMENT_RASTER_DPI", 200)
+        max_pixels = raster_env_int("PLATEN_DOCUMENT_MAX_RASTER_PIXELS")
+        structured_pixels = raster_env_int("PLATEN_DOCUMENT_STRUCTURED_MAX_RASTER_PIXELS")
         return cls(
             tesseract_binary=os.getenv("TESSERACT_BINARY") or None,
             tessdata_dir=os.getenv("TESSDATA_PREFIX") or None,
@@ -79,24 +88,6 @@ def _positive_float(raw: str | None, default: float) -> float:
     except ValueError:
         return default
     return value if value > 0 else default
-
-
-def _positive_int(raw: str | None, default: int) -> int:
-    try:
-        value = int(raw) if raw else default
-    except ValueError:
-        return default
-    return value if value > 0 else default
-
-
-def _optional_positive_int(raw: str | None) -> int | None:
-    if not raw:
-        return None
-    try:
-        value = int(raw)
-    except ValueError:
-        return None
-    return value if value > 0 else None
 
 
 def _route_policy(value: str | object | None) -> RoutePolicy:
@@ -127,13 +118,13 @@ class DocumentProcessor:
             structured_limit = structured_max_raster_pixels()
         self._structured_processor = StructuredDocumentProcessor(
             ocr_worker=self._make_worker(
-                structured_limit,
+                effective_raster_limit(self.config.max_raster_pixels, structured_limit),
                 table_aware_ocr=self.config.enable_scanned_table_recognition,
             ),
             enable_scanned_table_recognition=self.config.enable_scanned_table_recognition,
         )
         self._text_renderer = TextRenderer()
-        self._searchable_pdf_renderer = SearchablePdfRenderer()
+        self._searchable_pdf_renderer = SearchablePdfRenderer(max_raster_pixels=self.config.max_raster_pixels)
 
     def _make_worker(
         self,
@@ -331,6 +322,7 @@ class DocumentProcessor:
             color=color,
             cancellation_check=cancellation_check,
             progress_callback=progress_callback,
+            max_raster_pixels=getattr(getattr(self, "config", None), "max_raster_pixels", None),
         )
 
     def apply_markup_regions(
