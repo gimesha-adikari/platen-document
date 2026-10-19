@@ -8,7 +8,7 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: Exact version declared in pyproject.toml
+        description: SDK 0.1.9 only; must match pyproject.toml
         required: true
         type: string
       reviewed_commit:
@@ -86,7 +86,6 @@ jobs:
           CI_WHEEL_STEP = "Qualify a clean installed wheel"
           CI_CANDIDATE_STEP = "Run raster security tests against the accepted candidate wheel"
           MAX_CI_AGE = timedelta(days=30)
-          VERSION_RE = re.compile(r"^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$")
           SHA_RE = re.compile(r"^[0-9a-f]{40}$")
 
           class ReleaseGateError(Exception):
@@ -96,15 +95,9 @@ jobs:
               raise ReleaseGateError(message)
 
           def parse_version(value):
-              if not isinstance(value, str) or len(value) > 32:
-                  fail("Release version must be a three-part numeric version.")
-              match = VERSION_RE.fullmatch(value)
-              if not match:
-                  fail("Release version must be a three-part numeric version.")
-              parts = tuple(int(part) for part in match.groups())
-              if parts < (0, 1, 9):
-                  fail("This workflow requires SDK 0.1.9 or a newer security-qualified release.")
-              return parts
+              if not isinstance(value, str) or value != "0.1.9":
+                  fail("Only SDK 0.1.9 is authorized by this workflow.")
+              return value
 
           def require_sha(value, label):
               if not isinstance(value, str) or not SHA_RE.fullmatch(value):
@@ -123,9 +116,8 @@ jobs:
               if env.get("RELEASE_TRIGGERING_ACTOR") != OWNER_ACTOR:
                   fail("Release triggering actor, including any rerun actor, is not authorized.")
 
-              input_version = env.get("RELEASE_VERSION")
-              project_version = str(project_version)
-              parse_version(project_version)
+              input_version = parse_version(env.get("RELEASE_VERSION"))
+              project_version = parse_version(project_version)
               if input_version != project_version:
                   fail("Requested release version does not match pyproject.toml.")
 
@@ -482,8 +474,8 @@ jobs:
           import shutil
 
           version = os.environ["RELEASE_VERSION"]
-          if not re.fullmatch(r"(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)", version):
-              raise SystemExit("Invalid release version in artifact preparation.")
+          if version != "0.1.9":
+              raise SystemExit("Only SDK 0.1.9 may be prepared for publication.")
           run_id = int(os.environ["RELEASE_RUN_ID"])
           attempt = int(os.environ["RELEASE_RUN_ATTEMPT"])
           tag_ref_oid = os.environ["TAG_REF_OID"]
@@ -599,8 +591,7 @@ jobs:
           REPOSITORY = "gimesha-adikari/platen-document"
           OWNER_ACTOR = "gimesha-adikari"
           SHA_RE = re.compile(r"^[0-9a-f]{40}$")
-          VERSION_RE = re.compile(r"^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$")
-          DIGEST_RE = re.compile(r"^sha256:[0-9a-f]{64}$")
+          RAW_UPLOAD_DIGEST_RE = re.compile(r"[0-9a-f]{64}")
 
           class ReleaseGateError(Exception):
               pass
@@ -609,11 +600,8 @@ jobs:
               raise ReleaseGateError(message)
 
           def parse_version(value):
-              if not isinstance(value, str) or len(value) > 32:
-                  fail("Release version is invalid.")
-              match = VERSION_RE.fullmatch(value)
-              if not match or tuple(int(part) for part in match.groups()) < (0, 1, 9):
-                  fail("Only SDK 0.1.9 or newer security-qualified versions may be published.")
+              if not isinstance(value, str) or value != "0.1.9":
+                  fail("Only SDK 0.1.9 is authorized by this workflow.")
               return value
 
           def require_sha(value, label):
@@ -823,11 +811,13 @@ jobs:
                   fail("Reviewed commit is no longer the current main release commit.")
 
               artifact_id = env.get("EXPECTED_ARTIFACT_ID", "")
-              artifact_digest = env.get("EXPECTED_ARTIFACT_DIGEST", "")
+              raw_upload_digest = env.get("EXPECTED_ARTIFACT_DIGEST", "")
               if not re.fullmatch(r"[1-9][0-9]*", artifact_id):
                   fail("Build artifact ID is missing or invalid.")
-              if not DIGEST_RE.fullmatch(artifact_digest):
+              if not isinstance(raw_upload_digest, str) or not RAW_UPLOAD_DIGEST_RE.fullmatch(raw_upload_digest):
                   fail("Build artifact digest is missing or invalid.")
+              # upload-artifact emits raw hex; the REST artifact schema includes the algorithm.
+              artifact_digest = f"sha256:{raw_upload_digest}"
               artifact = api_get(f"/repos/{REPOSITORY}/actions/artifacts/{artifact_id}")
               expected_name = f"python-package-distributions-{context['run_id']}-{context['run_attempt']}"
               workflow_run = artifact.get("workflow_run", {})

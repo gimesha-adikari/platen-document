@@ -19,6 +19,7 @@ WORKFLOW_PATH = ROOT / ".github/workflows/release.yml"
 REPOSITORY = "gimesha-adikari/platen-document"
 COMMIT = "ace8a33bb78595fbc704fd4ec0d319351fea61b9"
 TAG_REF_OID = "b" * 40
+UPLOAD_ARTIFACT_DIGEST = hashlib.sha256(b"mock uploaded artifact archive").hexdigest()
 CI_RUN_ID = 39275953887
 CI_WORKFLOW_ID = 389181912
 CI_JOB_NAME = "Test and Qualify Distributions"
@@ -93,7 +94,7 @@ class FakeGitHub:
         self.artifact = {
             "id": 777,
             "name": "python-package-distributions-12345-1",
-            "digest": "sha256:" + "a" * 64,
+            "digest": "sha256:" + UPLOAD_ARTIFACT_DIGEST,
             "expired": False,
             "size_in_bytes": 1234,
             "workflow_run": {
@@ -227,7 +228,7 @@ def _publication_env(bundle: Path, **overrides: str) -> dict[str, str]:
     values.update(
         {
             "EXPECTED_ARTIFACT_ID": "777",
-            "EXPECTED_ARTIFACT_DIGEST": "sha256:" + "a" * 64,
+            "EXPECTED_ARTIFACT_DIGEST": UPLOAD_ARTIFACT_DIGEST,
             "EXPECTED_TAG_REF_OID": TAG_REF_OID,
             "ARTIFACT_DOWNLOAD_DIR": str(bundle),
         }
@@ -386,6 +387,37 @@ def test_preflight_accepts_only_exact_sdk_ci_and_current_installed_wheel_suite()
     assert result["reviewed_commit"] == COMMIT
     assert result["tag"] == "v0.1.9"
     assert result["tag_ref_oid"] == TAG_REF_OID
+
+
+@pytest.mark.parametrize(
+    "version",
+    [
+        "0.1.8", "0.1.10", "0.2.0", "1.0.0", "999.999.999",
+        "0.1.9rc1", "0.1.9.dev1", "0.1.9.post1", "0.1.9+local",
+        "", "v0.1.9", "00.1.9", "0.1", " 0.1.9", "0.1.9\n",
+        "0.1.9;echo unsafe", "$(echo 0.1.9)", "`echo 0.1.9`", None, True, 19,
+    ],
+)
+@pytest.mark.parametrize("gate", [BUILD_GATE, PUBLISH_GATE], ids=["build", "publish"])
+def test_only_019_is_eligible_even_if_declared_version_matches(gate, version) -> None:
+    env = _env(RELEASE_VERSION=version)
+    with pytest.raises(gate["ReleaseGateError"], match="Only SDK 0.1.9"):
+        if gate is BUILD_GATE:
+            gate["validate_context"](env, version, COMMIT)
+        else:
+            gate["publication_context"](env)
+
+
+@pytest.mark.parametrize("declared_version", ["0.1.8", "0.1.10"])
+def test_publish_requested_version_must_equal_reviewed_pyproject(
+    tmp_path: Path, declared_version: str
+) -> None:
+    bundle = tmp_path / "artifact"
+    _write_artifact_bundle(tmp_path)
+    github = FakeGitHub()
+    github.version = declared_version
+    with pytest.raises(PUBLISH_GATE["ReleaseGateError"], match="reviewed pyproject.toml"):
+        _do_publication_preflight(bundle, github=github)
 
 
 @pytest.mark.parametrize(
@@ -579,8 +611,52 @@ def test_publish_preflight_revalidates_main_tag_artifact_and_pypi_before_boundar
     )
     assert result["reviewed_commit"] == COMMIT
     assert result["artifact_id"] == "777"
+    assert result["version"] == "0.1.9"
+    assert result["artifact_digest"] == "sha256:" + UPLOAD_ARTIFACT_DIGEST
     assert events[-1] == "pypi-absence-check"
     assert "Publish with Trusted Publishing" in WORKFLOW_PATH.read_text()
+
+
+@pytest.mark.parametrize(
+    "raw_digest",
+    [
+        "", "a" * 63, "a" * 65, "A" * 64, "g" * 64,
+        "sha256:" + UPLOAD_ARTIFACT_DIGEST,
+        " " + UPLOAD_ARTIFACT_DIGEST, UPLOAD_ARTIFACT_DIGEST + "\n",
+        None, True, 123,
+    ],
+)
+def test_publish_rejects_invalid_raw_upload_action_digest(tmp_path: Path, raw_digest) -> None:
+    bundle = tmp_path / "artifact"
+    _write_artifact_bundle(tmp_path)
+    github = FakeGitHub()
+    with pytest.raises(PUBLISH_GATE["ReleaseGateError"], match="Build artifact digest"):
+        _do_publication_preflight(
+            bundle, _publication_env(bundle, EXPECTED_ARTIFACT_DIGEST=raw_digest), github
+        )
+    assert f"/repos/{REPOSITORY}/actions/artifacts/777" not in github.calls
+
+
+@pytest.mark.parametrize("rest_digest", ["sha256:" + "d" * 64, UPLOAD_ARTIFACT_DIGEST, "", None])
+def test_publish_rejects_rest_digest_not_equal_to_normalized_upload_output(
+    tmp_path: Path, rest_digest
+) -> None:
+    bundle = tmp_path / "artifact"
+    _write_artifact_bundle(tmp_path)
+    github = FakeGitHub()
+    github.artifact["digest"] = rest_digest
+    with pytest.raises(PUBLISH_GATE["ReleaseGateError"], match="archive digest"):
+        _do_publication_preflight(bundle, github=github)
+
+
+@pytest.mark.parametrize("field", ["id", "name", "digest", "expired", "size_in_bytes", "workflow_run"])
+def test_publish_rejects_missing_rest_artifact_metadata(tmp_path: Path, field: str) -> None:
+    bundle = tmp_path / "artifact"
+    _write_artifact_bundle(tmp_path)
+    github = FakeGitHub()
+    del github.artifact[field]
+    with pytest.raises(PUBLISH_GATE["ReleaseGateError"], match="archive digest"):
+        _do_publication_preflight(bundle, github=github)
 
 
 @pytest.mark.parametrize(
@@ -669,7 +745,7 @@ def test_publish_preflight_rejects_bad_artifact_id_digest_and_pypi_failure(tmp_p
     _write_artifact_bundle(tmp_path)
     for env_change in (
         {"EXPECTED_ARTIFACT_ID": "not-an-id"},
-        {"EXPECTED_ARTIFACT_DIGEST": "sha256:" + "d" * 64},
+        {"EXPECTED_ARTIFACT_DIGEST": "d" * 64},
     ):
         with pytest.raises(PUBLISH_GATE["ReleaseGateError"]):
             _do_publication_preflight(bundle, _publication_env(bundle, **env_change))
