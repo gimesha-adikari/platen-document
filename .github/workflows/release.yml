@@ -100,6 +100,74 @@ jobs:
       - name: Validate distribution metadata
         run: python -m twine check dist/*
 
+      - name: Qualify the clean installed release wheel
+        shell: bash
+        env:
+          SDK_WORKSPACE: ${{ github.workspace }}
+        run: |
+          set -euo pipefail
+          RELEASE_SMOKE_ROOT="$(mktemp -d "${RUNNER_TEMP}/release-wheel-smoke.XXXXXX")"
+          trap 'rm -rf "${RELEASE_SMOKE_ROOT}"' EXIT
+          python -m venv "${RELEASE_SMOKE_ROOT}/venv"
+          "${RELEASE_SMOKE_ROOT}/venv/bin/python" -m pip install --disable-pip-version-check "${SDK_WORKSPACE}"/dist/*.whl
+          cat > "${RELEASE_SMOKE_ROOT}/verify_release_wheel.py" <<'PY'
+          import importlib.metadata
+          import json
+          import os
+          from pathlib import Path
+          import sys
+          import sysconfig
+          import tomllib
+
+          import platen_document
+          from platen_document.cli import main
+
+          workspace = Path(os.environ["SDK_WORKSPACE"]).resolve()
+          expected_version = tomllib.loads((workspace / "pyproject.toml").read_text())["project"]["version"]
+          site_packages = Path(sysconfig.get_path("purelib")).resolve()
+          distribution = importlib.metadata.distribution("platen-document")
+          assert sys.prefix != sys.base_prefix, "Release wheel must use a virtual environment"
+          assert os.environ["GITHUB_REF_NAME"] == f"v{expected_version}", "Release tag/version mismatch"
+          assert distribution.version == expected_version, (distribution.version, expected_version)
+          assert Path(distribution.locate_file("")).resolve().is_relative_to(site_packages)
+          assert Path(platen_document.__file__).resolve().is_relative_to(site_packages)
+          assert not any(
+              Path(item or os.getcwd()).resolve().is_relative_to(workspace) for item in sys.path
+          ), "Source checkout must not be on the import path"
+          direct_url = distribution.read_text("direct_url.json")
+          if direct_url:
+              assert not json.loads(direct_url).get("dir_info", {}).get("editable", False)
+
+          if expected_version == "0.1.9":
+              from platen_document import ConfigurationError, RasterAdmissionError
+              from platen_document.engine.errors import (
+                  ConfigurationError as EngineConfigurationError,
+                  RasterAdmissionError as EngineRasterAdmissionError,
+              )
+              from platen_document.engine.geometry import (
+                  HARD_MAX_RASTER_PIXELS, MAX_RASTER_DPI, MAX_RASTER_AXIS,
+              )
+
+              assert ConfigurationError is EngineConfigurationError
+              assert RasterAdmissionError is EngineRasterAdmissionError
+              assert issubclass(ConfigurationError, Exception)
+              assert issubclass(RasterAdmissionError, Exception)
+              assert type(HARD_MAX_RASTER_PIXELS) is int and HARD_MAX_RASTER_PIXELS == 10_000_000
+              assert type(MAX_RASTER_DPI) is int and MAX_RASTER_DPI == 600
+              assert type(MAX_RASTER_AXIS) is int and MAX_RASTER_AXIS == 32_768
+
+          # Exercise the installed CLI without processing or rendering a document.
+          assert main(["doctor"]) == 0
+          for name, module in tuple(sys.modules.items()):
+              if name == "platen_document" or name.startswith("platen_document."):
+                  path = getattr(module, "__file__", None)
+                  if path:
+                      assert Path(path).resolve().is_relative_to(site_packages), (name, path)
+          print(f"Qualified release wheel {distribution.version}: {platen_document.__file__}")
+          PY
+          cd "${RELEASE_SMOKE_ROOT}"
+          "${RELEASE_SMOKE_ROOT}/venv/bin/python" -I "${RELEASE_SMOKE_ROOT}/verify_release_wheel.py"
+
       - name: Upload release distributions
         uses: actions/upload-artifact@v4
         with:

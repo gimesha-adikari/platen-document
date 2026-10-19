@@ -61,15 +61,27 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
-      - name: Detect raster admission regression suite
+      - name: Select the version-required raster admission suite
         id: raster-suite
         shell: bash
         run: |
-          if [[ -f tests/test_raster_admission.py ]]; then
-            echo "present=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "present=false" >> "$GITHUB_OUTPUT"
-          fi
+          python - <<'PY'
+          import os
+          from pathlib import Path
+          import tomllib
+
+          from packaging.version import Version
+
+          version = str(Version(tomllib.loads(Path("pyproject.toml").read_text())["project"]["version"]))
+          present = Path("tests/test_raster_admission.py").is_file()
+          # Only this workflow-only 0.1.8 baseline may use the accepted candidate.
+          candidate = version == "0.1.8" and not present
+          if not present and not candidate:
+              raise SystemExit(f"SDK {version} requires its own tests/test_raster_admission.py")
+          with open(os.environ["GITHUB_OUTPUT"], "a") as output:
+              print(f"candidate={str(candidate).lower()}", file=output)
+          print(f"SDK {version}: raster suite={'accepted candidate' if candidate else 'current wheel'}")
+          PY
 
       - name: Qualify a clean installed wheel
         shell: bash
@@ -127,28 +139,30 @@ jobs:
               attest_installed_wheel()
               raise SystemExit(result)
 
-          print("Raster admission suite is not present at this source revision; full SDK tests passed.")
+          if expected_version != "0.1.8":
+              raise SystemExit(f"SDK {expected_version} requires its own raster admission suite")
+          print("SDK 0.1.8: the accepted 0.1.9 candidate is qualified separately.")
           PY
           cd "${WHEEL_SMOKE_ROOT}"
           "${WHEEL_SMOKE_ROOT}/venv/bin/python" -I "${WHEEL_SMOKE_ROOT}/verify_wheel.py"
 
       # The accepted F-11 source PR is separate from this workflow-only PR.
-      # Qualify its immutable candidate until the regression suite is in this ref.
+      # Only the 0.1.8 baseline may qualify its immutable candidate separately.
       - name: Check out the accepted F-11 source candidate
-        if: steps.raster-suite.outputs.present == 'false'
+        if: steps.raster-suite.outputs.candidate == 'true'
         uses: actions/checkout@v4
         with:
           ref: 729c6a121c66cbf439b06be488ffecb519ccdbd9
           path: f11-accepted-source
 
       - name: Build the accepted F-11 candidate wheel
-        if: steps.raster-suite.outputs.present == 'false'
+        if: steps.raster-suite.outputs.candidate == 'true'
         run: |
           mkdir -p "$RUNNER_TEMP/f11-candidate-dist"
           python -m build --wheel --outdir "$RUNNER_TEMP/f11-candidate-dist" "$GITHUB_WORKSPACE/f11-accepted-source"
 
       - name: Upload the accepted F-11 candidate wheel for review
-        if: steps.raster-suite.outputs.present == 'false'
+        if: steps.raster-suite.outputs.candidate == 'true'
         uses: actions/upload-artifact@v4
         with:
           name: f11-accepted-candidate-wheel-${{ github.run_id }}-${{ github.run_attempt }}
@@ -157,7 +171,7 @@ jobs:
           retention-days: 14
 
       - name: Run raster security tests against the accepted candidate wheel
-        if: steps.raster-suite.outputs.present == 'false'
+        if: steps.raster-suite.outputs.candidate == 'true'
         shell: bash
         env:
           SDK_WORKSPACE: ${{ github.workspace }}/f11-accepted-source
