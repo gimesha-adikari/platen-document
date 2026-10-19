@@ -1,0 +1,123 @@
+name: SDK CI
+
+on:
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+concurrency:
+  group: sdk-ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  qualify:
+    name: Test and Qualify Distributions
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+
+      - name: Install system test dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            tesseract-ocr \
+            tesseract-ocr-eng \
+            tesseract-ocr-sin \
+            tesseract-ocr-tam \
+            qpdf
+
+      - name: Install declared package and test dependencies
+        run: python -m pip install ".[dev]"
+
+      - name: Run SDK test suite
+        run: python -m pytest -q
+
+      - name: Build wheel and source distribution
+        run: python -m build --wheel --sdist
+
+      - name: Validate distribution metadata
+        run: python -m twine check dist/*
+
+      - name: Qualify a clean installed wheel
+        shell: bash
+        env:
+          SDK_WORKSPACE: ${{ github.workspace }}
+          WHEEL_SMOKE_ROOT: ${{ runner.temp }}/sdk-wheel-smoke
+        run: |
+          set -euo pipefail
+          mkdir -p "${WHEEL_SMOKE_ROOT}"
+          python -m venv "${WHEEL_SMOKE_ROOT}/venv"
+          "${WHEEL_SMOKE_ROOT}/venv/bin/python" -m pip install --disable-pip-version-check dist/*.whl pytest
+          printf '[pytest]\n' > "${WHEEL_SMOKE_ROOT}/pytest.ini"
+          cat > "${WHEEL_SMOKE_ROOT}/verify_wheel.py" <<'PY'
+          import importlib.metadata
+          import json
+          import os
+          from pathlib import Path
+          import sys
+          import tomllib
+
+          import platen_document
+
+          workspace = Path(os.environ["SDK_WORKSPACE"]).resolve()
+          smoke_root = Path(os.environ["WHEEL_SMOKE_ROOT"]).resolve()
+          expected_version = tomllib.loads((workspace / "pyproject.toml").read_text())["project"]["version"]
+          expected_site_packages = Path(sys.prefix).resolve() / "lib/python3.12/site-packages"
+
+          def attest_installed_wheel():
+              distribution = importlib.metadata.distribution("platen-document")
+              module_path = Path(platen_document.__file__).resolve()
+              assert distribution.version == expected_version, distribution.version
+              assert module_path.is_relative_to(expected_site_packages), module_path
+              assert (workspace / "src/platen_document").resolve() not in {
+                  Path(item or os.getcwd()).resolve() for item in sys.path
+              }
+              direct_url = distribution.read_text("direct_url.json")
+              if direct_url:
+                  assert not json.loads(direct_url).get("dir_info", {}).get("editable", False)
+              for name, module in tuple(sys.modules.items()):
+                  if name == "platen_document" or name.startswith("platen_document."):
+                      path = getattr(module, "__file__", None)
+                      if path:
+                          assert Path(path).resolve().is_relative_to(expected_site_packages), (name, path)
+              print(f"Installed wheel {distribution.version}: {module_path}")
+
+          attest_installed_wheel()
+          raster_tests = workspace / "tests/test_raster_admission.py"
+          if raster_tests.is_file():
+              import pytest
+
+              os.chdir(smoke_root)
+              result = pytest.main([
+                  "-q", "-c", str(smoke_root / "pytest.ini"), "-o", "pythonpath=", str(raster_tests)
+              ])
+              attest_installed_wheel()
+              raise SystemExit(result)
+
+          print("Raster admission suite is not present at this source revision; full SDK tests passed.")
+          PY
+          cd "${WHEEL_SMOKE_ROOT}"
+          "${WHEEL_SMOKE_ROOT}/venv/bin/python" -I "${WHEEL_SMOKE_ROOT}/verify_wheel.py"
+
+      - name: Upload distributions for review
+        uses: actions/upload-artifact@v4
+        with:
+          name: sdk-ci-distributions-${{ github.run_id }}-${{ github.run_attempt }}
+          path: dist/*
+          if-no-files-found: error
+          retention-days: 14
