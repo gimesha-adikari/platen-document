@@ -53,6 +53,24 @@ jobs:
       - name: Validate distribution metadata
         run: python -m twine check dist/*
 
+      - name: Upload distributions for review
+        uses: actions/upload-artifact@v4
+        with:
+          name: sdk-ci-distributions-${{ github.run_id }}-${{ github.run_attempt }}
+          path: dist/*
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Detect raster admission regression suite
+        id: raster-suite
+        shell: bash
+        run: |
+          if [[ -f tests/test_raster_admission.py ]]; then
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "present=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Qualify a clean installed wheel
         shell: bash
         env:
@@ -114,10 +132,32 @@ jobs:
           cd "${WHEEL_SMOKE_ROOT}"
           "${WHEEL_SMOKE_ROOT}/venv/bin/python" -I "${WHEEL_SMOKE_ROOT}/verify_wheel.py"
 
-      - name: Upload distributions for review
-        uses: actions/upload-artifact@v4
+      # The accepted F-11 source PR is separate from this workflow-only PR.
+      # Qualify its immutable candidate until the regression suite is in this ref.
+      - name: Check out the accepted F-11 source candidate
+        if: steps.raster-suite.outputs.present == 'false'
+        uses: actions/checkout@v4
         with:
-          name: sdk-ci-distributions-${{ github.run_id }}-${{ github.run_attempt }}
-          path: dist/*
-          if-no-files-found: error
-          retention-days: 14
+          ref: 729c6a121c66cbf439b06be488ffecb519ccdbd9
+          path: f11-accepted-source
+
+      - name: Build the accepted F-11 candidate wheel
+        if: steps.raster-suite.outputs.present == 'false'
+        run: |
+          mkdir -p "$RUNNER_TEMP/f11-candidate-dist"
+          python -m build --wheel --outdir "$RUNNER_TEMP/f11-candidate-dist" "$GITHUB_WORKSPACE/f11-accepted-source"
+
+      - name: Run raster security tests against the accepted candidate wheel
+        if: steps.raster-suite.outputs.present == 'false'
+        shell: bash
+        env:
+          SDK_WORKSPACE: ${{ github.workspace }}/f11-accepted-source
+          WHEEL_SMOKE_ROOT: ${{ runner.temp }}/f11-candidate-wheel-smoke
+        run: |
+          set -euo pipefail
+          mkdir -p "${WHEEL_SMOKE_ROOT}"
+          python -m venv "${WHEEL_SMOKE_ROOT}/venv"
+          "${WHEEL_SMOKE_ROOT}/venv/bin/python" -m pip install --disable-pip-version-check \
+            "${RUNNER_TEMP}"/f11-candidate-dist/*.whl pytest
+          printf '[pytest]\n' > "${WHEEL_SMOKE_ROOT}/pytest.ini"
+          "${WHEEL_SMOKE_ROOT}/venv/bin/python" -I "${RUNNER_TEMP}/sdk-wheel-smoke/verify_wheel.py"
