@@ -147,6 +147,15 @@ jobs:
           mkdir -p "$RUNNER_TEMP/f11-candidate-dist"
           python -m build --wheel --outdir "$RUNNER_TEMP/f11-candidate-dist" "$GITHUB_WORKSPACE/f11-accepted-source"
 
+      - name: Upload the accepted F-11 candidate wheel for review
+        if: steps.raster-suite.outputs.present == 'false'
+        uses: actions/upload-artifact@v4
+        with:
+          name: f11-accepted-candidate-wheel-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/f11-candidate-dist/*.whl
+          if-no-files-found: error
+          retention-days: 14
+
       - name: Run raster security tests against the accepted candidate wheel
         if: steps.raster-suite.outputs.present == 'false'
         shell: bash
