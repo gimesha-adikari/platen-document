@@ -94,6 +94,19 @@ def test_native_document_uses_canonical_structured_schema() -> None:
     assert any(line.startswith("## ") for line in render_structured_markdown(result).splitlines())
 
 
+def test_scanned_ocr_markup_preserves_supported_text_and_annotation(tmp_path: Path) -> None:
+    source = tmp_path / "source.pdf"
+    output = tmp_path / "marked.pdf"
+    _scanned_pdf(source)
+    processor = DocumentProcessor()
+    text = processor.extract_text(source, language="eng", routing_policy="FAST")
+    assert "Scanned paragraph 123" in processor.render_text(text)
+    result = processor.apply_markup(source, output, action="highlight", query="Scanned paragraph 123", language="eng")
+    assert result.selections
+    with fitz.open(output) as document:
+        assert len(list(document[0].annots())) >= 1
+
+
 def test_native_table_preserves_structured_table_contract(tmp_path: Path) -> None:
     pdf_path = tmp_path / "native-table.pdf"
     _native_table_pdf(pdf_path)

@@ -2,6 +2,8 @@
 
 from .api import DocumentEngine, DocumentProcessor, EngineConfiguration, RasterDpiMetadataPolicy
 from .engine.errors import (
+    ConfigurationError,
+    RasterAdmissionError,
     AnnotationWriteError,
     AmbiguousSelectionError,
     EngineUnavailableError,
@@ -27,6 +29,8 @@ from .engine.markup import (
 from .engine.validation import OCRProfile
 
 __all__ = [
+    "ConfigurationError",
+    "RasterAdmissionError",
     "AnnotationWriteError",
     "AmbiguousSelectionError",
     "DocumentEngine",

@@ -527,6 +527,10 @@ dist/
 
 ## Requirements
 
+See the [raster security contract](docs/raster-security.md) for mandatory raster
+limits, typed rejection behavior, compatibility changes and remaining native
+isolation requirements in the proposed 0.1.9 patch.
+
 - Python 3.12+
 - Tesseract OCR
 - PyMuPDF

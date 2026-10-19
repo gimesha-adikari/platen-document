@@ -684,11 +684,12 @@ def apply_ocr_markup(
     color: tuple[float, float, float] = (1.0, 1.0, 0.0),
     cancellation_check: Callable[[], None] | None = None,
     progress_callback: Callable[[int, int], None] | None = None,
+    max_raster_pixels: int | None = None,
 ) -> MarkupExecutionResult:
     """Run canonical OCR once, resolve all matches, then annotate the PDF."""
     if mode is MarkupMode.MANUAL:
         raise ValueError("MarkupMode.MANUAL is only supported by apply_markup_regions")
-    worker = OCRV2Worker(route_policy=RoutePolicy(preferred_engine="tesseract_v2", fallback_engine="tesseract_v2"))
+    worker = OCRV2Worker(route_policy=RoutePolicy(preferred_engine="tesseract_v2", fallback_engine="tesseract_v2"), max_raster_pixels=max_raster_pixels)
     result = worker.process_document(
         input_path,
         language=language,
