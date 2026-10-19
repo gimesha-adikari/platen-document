@@ -7,7 +7,7 @@ import hashlib
 import json
 import re
 import textwrap
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from urllib.error import HTTPError
 
@@ -25,7 +25,7 @@ CI_JOB_NAME = "Test and Qualify Distributions"
 CI_SELECT_STEP = "Select the version-required raster admission suite"
 CI_WHEEL_STEP = "Qualify a clean installed wheel"
 CI_CANDIDATE_STEP = "Run raster security tests against the accepted candidate wheel"
-NOW = datetime(2026, 10, 19, 15, 20, tzinfo=UTC)
+NOW = datetime(2026, 10, 19, 15, 20, tzinfo=timezone.utc)
 
 
 def _script(namespace: str) -> dict[str, object]:
