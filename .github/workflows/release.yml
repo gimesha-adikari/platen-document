@@ -1,82 +1,369 @@
 name: Release
 
-# Keep release.yml and the pypi environment stable for Trusted Publishing.
+# The pypi Trusted Publisher identity remains this workflow plus environment.
+# Release tags must be created separately and point to the reviewed main commit.
+run-name: Release platen-document
 
 on:
-  push:
-    tags:
-      - 'v*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: SDK 0.1.9 only; must match pyproject.toml
+        required: true
+        type: string
+      reviewed_commit:
+        description: Exact 40-character main commit approved for this release
+        required: true
+        type: string
 
+# One active release attempt at a time; pending attempts do not cancel a running release.
 concurrency:
-  group: pypi-release-${{ github.ref }}
+  group: pypi-release
   cancel-in-progress: false
 
-permissions:
-  contents: read
+permissions: {}
 
 jobs:
   build:
-    name: Build & Validate Release
+    name: Build and qualify the reviewed release
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 40
     permissions:
+      actions: read
       contents: read
+    outputs:
+      artifact_id: ${{ steps.upload_release.outputs['artifact-id'] }}
+      artifact_digest: ${{ steps.upload_release.outputs['artifact-digest'] }}
+      tag_ref_oid: ${{ steps.release_preflight.outputs.tag_ref_oid }}
 
     steps:
-      - name: Checkout tagged source
-        uses: actions/checkout@v4
+      - name: Check out the dispatched main commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # actions/checkout v7.0.1
         with:
+          ref: ${{ github.sha }}
           fetch-depth: 0
 
       - name: Set up Python 3.12
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # actions/setup-python v7.0.0
         with:
           python-version: "3.12"
           cache: "pip"
 
-      - name: Verify release tag and reviewed main ancestry
-        shell: bash
+      - name: Authorize release and verify exact SDK CI evidence
+        id: release_preflight
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GITHUB_API_URL: ${{ github.api_url }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          GITHUB_RUN_ID: ${{ github.run_id }}
+          GITHUB_RUN_ATTEMPT: ${{ github.run_attempt }}
+          RELEASE_EVENT_NAME: ${{ github.event_name }}
+          RELEASE_REF: ${{ github.ref }}
+          RELEASE_EVENT_SHA: ${{ github.sha }}
+          RELEASE_ACTOR: ${{ github.actor }}
+          RELEASE_TRIGGERING_ACTOR: ${{ github.triggering_actor }}
+          RELEASE_VERSION: ${{ inputs.version }}
+          REVIEWED_COMMIT: ${{ inputs.reviewed_commit }}
         run: |
-          set -euo pipefail
+          python - <<'PY_RELEASE_PREFLIGHT'
+          import base64
+          from datetime import UTC, datetime, timedelta
+          import json
+          import os
+          from pathlib import Path
+          import re
+          import subprocess
+          import tomllib
+          import urllib.error
+          import urllib.request
 
-          PROJECT_VERSION="$(python -c 'import tomllib; print(tomllib.load(open("pyproject.toml", "rb"))["project"]["version"])')"
-          EXPECTED_TAG="v${PROJECT_VERSION}"
-          if [[ "${GITHUB_REF_NAME}" != "${EXPECTED_TAG}" ]]; then
-            echo "::error::Release tag '${GITHUB_REF_NAME}' does not match '${EXPECTED_TAG}'."
-            exit 1
-          fi
+          REPOSITORY = "gimesha-adikari/platen-document"
+          OWNER_ACTOR = "gimesha-adikari"
+          CI_WORKFLOW_NAME = "SDK CI"
+          CI_WORKFLOW_PATH = ".github/workflows/ci.yml"
+          CI_JOB_NAME = "Test and Qualify Distributions"
+          CI_SELECT_STEP = "Select the version-required raster admission suite"
+          CI_WHEEL_STEP = "Qualify a clean installed wheel"
+          CI_CANDIDATE_STEP = "Run raster security tests against the accepted candidate wheel"
+          MAX_CI_AGE = timedelta(days=30)
+          SHA_RE = re.compile(r"^[0-9a-f]{40}$")
 
-          git fetch --no-tags origin main:refs/remotes/origin/main
-          if ! git merge-base --is-ancestor "${GITHUB_SHA}" refs/remotes/origin/main; then
-            echo "::error::Tagged commit is not reachable from main; refusing to publish an unreviewed branch commit."
-            exit 1
-          fi
+          class ReleaseGateError(Exception):
+              pass
 
-      - name: Verify the package version is absent from PyPI
-        shell: bash
-        run: |
-          set -euo pipefail
-          PROJECT_VERSION="$(python -c 'import tomllib; print(tomllib.load(open("pyproject.toml", "rb"))["project"]["version"])')"
-          URL="https://pypi.org/pypi/platen-document/${PROJECT_VERSION}/json"
+          def fail(message):
+              raise ReleaseGateError(message)
 
-          if ! HTTP_STATUS="$(curl --silent --show-error --output /dev/null --write-out '%{http_code}' --connect-timeout 10 --max-time 20 "${URL}")"; then
-            echo "::error::Could not verify PyPI version availability; publication is blocked."
-            exit 1
-          fi
+          def parse_version(value):
+              if not isinstance(value, str) or value != "0.1.9":
+                  fail("Only SDK 0.1.9 is authorized by this workflow.")
+              return value
 
-          case "${HTTP_STATUS}" in
-            404)
-              echo "PyPI reports ${PROJECT_VERSION} is absent."
-              ;;
-            200)
-              echo "::error::PyPI already has ${PROJECT_VERSION}; versions are immutable."
-              exit 1
-              ;;
-            *)
-              echo "::error::Unexpected PyPI response HTTP ${HTTP_STATUS}; publication is blocked."
-              exit 1
-              ;;
-          esac
+          def require_sha(value, label):
+              if not isinstance(value, str) or not SHA_RE.fullmatch(value):
+                  fail(f"{label} must be a lowercase 40-character Git commit ID.")
+              return value
+
+          def validate_context(env, project_version, checked_out_commit):
+              if env.get("RELEASE_EVENT_NAME") != "workflow_dispatch":
+                  fail("Only an explicit workflow_dispatch can authorize a release.")
+              if env.get("RELEASE_REF") != "refs/heads/main":
+                  fail("Releases can run only from refs/heads/main.")
+              if env.get("GITHUB_REPOSITORY") != REPOSITORY:
+                  fail("Release workflow repository identity does not match.")
+              if env.get("RELEASE_ACTOR") != OWNER_ACTOR:
+                  fail("Release dispatch actor is not authorized.")
+              if env.get("RELEASE_TRIGGERING_ACTOR") != OWNER_ACTOR:
+                  fail("Release triggering actor, including any rerun actor, is not authorized.")
+
+              input_version = parse_version(env.get("RELEASE_VERSION"))
+              project_version = parse_version(project_version)
+              if input_version != project_version:
+                  fail("Requested release version does not match pyproject.toml.")
+
+              reviewed = require_sha(env.get("REVIEWED_COMMIT"), "Reviewed commit")
+              event_sha = require_sha(env.get("RELEASE_EVENT_SHA"), "Dispatch commit")
+              checked_out = require_sha(checked_out_commit, "Checked-out commit")
+              if reviewed != event_sha or reviewed != checked_out:
+                  fail("Reviewed commit, dispatch SHA, and checked-out HEAD must be identical.")
+
+              for key in ("GITHUB_RUN_ID", "GITHUB_RUN_ATTEMPT"):
+                  if not re.fullmatch(r"[1-9][0-9]*", env.get(key, "")):
+                      fail(f"{key} is missing or invalid.")
+              return {
+                  "version": project_version,
+                  "reviewed_commit": reviewed,
+                  "tag": f"v{project_version}",
+                  "run_id": int(env["GITHUB_RUN_ID"]),
+                  "run_attempt": int(env["GITHUB_RUN_ATTEMPT"]),
+              }
+
+          def github_api_get(path, token, api_url, opener=None):
+              if not path.startswith("/repos/"):
+                  fail("Release gate attempted an unexpected GitHub API path.")
+              request = urllib.request.Request(
+                  api_url.rstrip("/") + path,
+                  headers={
+                      "Accept": "application/vnd.github+json",
+                      "Authorization": f"Bearer {token}",
+                      "X-GitHub-Api-Version": "2022-11-28",
+                  },
+              )
+              open_url = opener or urllib.request.urlopen
+              try:
+                  with open_url(request, timeout=20) as response:
+                      if response.status != 200:
+                          fail(f"GitHub API returned HTTP {response.status}.")
+                      return json.loads(response.read().decode("utf-8"))
+              except ReleaseGateError:
+                  raise
+              except urllib.error.HTTPError as error:
+                  raise ReleaseGateError(f"GitHub API returned HTTP {error.code}.") from None
+              except Exception:
+                  raise ReleaseGateError("GitHub API request failed; release is blocked.") from None
+
+          def make_api_get(env):
+              token = env.get("GH_TOKEN", "")
+              api_url = env.get("GITHUB_API_URL", "")
+              if not token or not api_url:
+                  fail("Read-only GitHub API credentials are unavailable.")
+              return lambda path: github_api_get(path, token, api_url)
+
+          def decode_content(payload, label):
+              if payload.get("type") != "file" or payload.get("encoding") != "base64":
+                  fail(f"Could not read reviewed {label} from GitHub.")
+              try:
+                  return base64.b64decode(payload["content"], validate=False).decode("utf-8")
+              except Exception:
+                  raise ReleaseGateError(f"Reviewed {label} was not valid UTF-8 file content.") from None
+
+          def read_repo_file(api_get, path, commit):
+              return decode_content(
+                  api_get(f"/repos/{REPOSITORY}/contents/{path}?ref={commit}"),
+                  path,
+              )
+
+          def parse_time(value):
+              try:
+                  parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+              except Exception:
+                  raise ReleaseGateError("SDK CI returned an invalid completion time.") from None
+              if parsed.tzinfo is None:
+                  fail("SDK CI completion time has no timezone.")
+              return parsed.astimezone(UTC)
+
+          def resolve_tag(api_get, tag):
+              ref = api_get(f"/repos/{REPOSITORY}/git/ref/tags/{tag}")
+              if ref.get("ref") != f"refs/tags/{tag}":
+                  fail("Expected release tag reference is missing or unexpected.")
+              current = ref.get("object")
+              if not isinstance(current, dict):
+                  fail("Release tag reference has no Git object.")
+              top_oid = require_sha(current.get("sha"), "Release tag object")
+              seen = set()
+              top = True
+              for _ in range(10):
+                  object_type = current.get("type")
+                  object_sha = require_sha(current.get("sha"), "Release tag target")
+                  if object_sha in seen:
+                      fail("Release tag contains a cycle.")
+                  seen.add(object_sha)
+                  if object_type == "commit":
+                      return top_oid, object_sha
+                  if object_type != "tag":
+                      fail("Release tag must resolve to a Git commit.")
+                  tag_object = api_get(f"/repos/{REPOSITORY}/git/tags/{object_sha}")
+                  if top and tag_object.get("tag") != tag:
+                      fail("Annotated tag name does not match the requested release tag.")
+                  top = False
+                  current = tag_object.get("object")
+                  if not isinstance(current, dict):
+                      fail("Annotated release tag has no target object.")
+              fail("Release tag nesting exceeded the supported limit.")
+
+          def verify_ci(api_get, commit, version, now=None):
+              workflows = api_get(f"/repos/{REPOSITORY}/actions/workflows?per_page=100").get(
+                  "workflows", []
+              )
+              exact = [
+                  workflow
+                  for workflow in workflows
+                  if workflow.get("path") == CI_WORKFLOW_PATH
+                  and workflow.get("name") == CI_WORKFLOW_NAME
+                  and workflow.get("state") == "active"
+              ]
+              if len(exact) != 1:
+                  fail("The exact active SDK CI workflow was not found.")
+              workflow_id = exact[0].get("id")
+              if type(workflow_id) is not int or workflow_id <= 0:
+                  fail("SDK CI workflow identity is invalid.")
+
+              runs = api_get(
+                  f"/repos/{REPOSITORY}/actions/workflows/{workflow_id}/runs"
+                  f"?head_sha={commit}&branch=main&per_page=100"
+              ).get("workflow_runs", [])
+              matching = [
+                  run
+                  for run in runs
+                  if run.get("workflow_id") == workflow_id
+                  and run.get("head_sha") == commit
+                  and run.get("head_branch") == "main"
+              ]
+              if not matching:
+                  fail("No SDK CI run exists for the exact reviewed main commit.")
+              latest = max(matching, key=lambda run: parse_time(run.get("updated_at", "")))
+              ci_run_id = latest.get("id")
+              if type(ci_run_id) is not int or ci_run_id <= 0:
+                  fail("SDK CI run identity is invalid.")
+              if latest.get("status") != "completed" or latest.get("conclusion") != "success":
+                  fail("The latest SDK CI run for the reviewed commit is not successful.")
+              current = now or datetime.now(UTC)
+              age = current - parse_time(latest.get("updated_at", ""))
+              if age < timedelta(minutes=-5) or age > MAX_CI_AGE:
+                  fail("SDK CI evidence is stale or has a future timestamp.")
+
+              ci_source = read_repo_file(api_get, CI_WORKFLOW_PATH, commit)
+              required_ci_source = (
+                  'candidate = version == "0.1.8" and not present',
+                  "if not present and not candidate:",
+                  'raster_tests = workspace / "tests/test_raster_admission.py"',
+                  "pytest.main([",
+                  'if expected_version != "0.1.8":',
+                  CI_WHEEL_STEP,
+              )
+              if any(fragment not in ci_source for fragment in required_ci_source):
+                  fail("Reviewed SDK CI does not require its current installed-wheel raster suite.")
+              test_file = api_get(
+                  f"/repos/{REPOSITORY}/contents/tests/test_raster_admission.py?ref={commit}"
+              )
+              if test_file.get("type") != "file":
+                  fail("Reviewed commit is missing tests/test_raster_admission.py.")
+
+              jobs = api_get(
+                  f"/repos/{REPOSITORY}/actions/runs/{ci_run_id}/jobs?per_page=100"
+              ).get("jobs", [])
+              qualifying_jobs = [
+                  job
+                  for job in jobs
+                  if job.get("name") == CI_JOB_NAME and job.get("conclusion") == "success"
+              ]
+              if len(qualifying_jobs) != 1:
+                  fail("The SDK CI distribution qualification job did not succeed.")
+              step_results = {}
+              for step in qualifying_jobs[0].get("steps", []):
+                  name = step.get("name")
+                  if name in step_results:
+                      fail("SDK CI returned duplicate security qualification steps.")
+                  step_results[name] = step.get("conclusion")
+              if step_results.get(CI_SELECT_STEP) != "success":
+                  fail("SDK CI did not successfully select the current-version raster suite.")
+              if step_results.get(CI_WHEEL_STEP) != "success":
+                  fail("The reviewed installed-wheel security qualification did not succeed.")
+              if step_results.get(CI_CANDIDATE_STEP) != "skipped":
+                  fail("SDK 0.1.9+ CI must use its own wheel and raster suite, not the old candidate.")
+
+          def check_pypi_absent(version, opener=None):
+              request = urllib.request.Request(
+                  f"https://pypi.org/pypi/platen-document/{version}/json",
+                  headers={"Accept": "application/json"},
+              )
+              open_url = opener or urllib.request.urlopen
+              try:
+                  with open_url(request, timeout=15) as response:
+                      status = response.status
+              except urllib.error.HTTPError as error:
+                  status = error.code
+              except Exception:
+                  raise ReleaseGateError("PyPI availability could not be verified; release is blocked.") from None
+              if status != 404:
+                  fail(f"PyPI returned HTTP {status}; only HTTP 404 permits a release.")
+
+          def release_preflight(env, project_version, checked_out_commit, api_get, pypi_check=None, opener=None, now=None):
+              context = validate_context(env, project_version, checked_out_commit)
+              remote_project = tomllib.loads(read_repo_file(api_get, "pyproject.toml", context["reviewed_commit"]))
+              if remote_project.get("project", {}).get("version") != context["version"]:
+                  fail("Reviewed pyproject.toml version does not match the requested release.")
+              main_ref = api_get(f"/repos/{REPOSITORY}/git/ref/heads/main")
+              if main_ref.get("object", {}).get("sha") != context["reviewed_commit"]:
+                  fail("Reviewed commit is no longer the current main release commit.")
+              tag_ref_oid, tag_target = resolve_tag(api_get, context["tag"])
+              if tag_target != context["reviewed_commit"]:
+                  fail("Release tag does not target the exact reviewed commit.")
+              verify_ci(api_get, context["reviewed_commit"], context["version"], now=now)
+              (pypi_check or check_pypi_absent)(context["version"], opener=opener)
+              context["tag_ref_oid"] = tag_ref_oid
+              return context
+
+          def main():
+              env = os.environ
+              try:
+                  project_version = tomllib.loads(Path("pyproject.toml").read_text())["project"]["version"]
+                  checked_out_commit = subprocess.run(
+                      ["git", "rev-parse", "HEAD"],
+                      check=True,
+                      capture_output=True,
+                      text=True,
+                  ).stdout.strip()
+                  context = release_preflight(
+                      env,
+                      project_version,
+                      checked_out_commit,
+                      make_api_get(env),
+                  )
+                  with open(env["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:
+                      output.write(f"tag_ref_oid={context['tag_ref_oid']}\n")
+                  print(
+                      f"Release preflight passed for SDK {context['version']} "
+                      f"at {context['reviewed_commit']}."
+                  )
+              except ReleaseGateError as error:
+                  raise SystemExit(str(error)) from None
+              except Exception:
+                  raise SystemExit("Release preflight failed closed.") from None
+
+          if __name__ == "__main__":
+              main()
+          PY_RELEASE_PREFLIGHT
 
       - name: Install system test dependencies
         run: |
@@ -91,7 +378,7 @@ jobs:
       - name: Install declared package and test dependencies
         run: python -m pip install ".[dev]"
 
-      - name: Run SDK test suite
+      - name: Run the complete SDK test suite
         run: python -m pytest -q
 
       - name: Build wheel and source distribution
@@ -104,13 +391,14 @@ jobs:
         shell: bash
         env:
           SDK_WORKSPACE: ${{ github.workspace }}
+          RELEASE_VERSION: ${{ inputs.version }}
         run: |
           set -euo pipefail
           RELEASE_SMOKE_ROOT="$(mktemp -d "${RUNNER_TEMP}/release-wheel-smoke.XXXXXX")"
           trap 'rm -rf "${RELEASE_SMOKE_ROOT}"' EXIT
           python -m venv "${RELEASE_SMOKE_ROOT}/venv"
           "${RELEASE_SMOKE_ROOT}/venv/bin/python" -m pip install --disable-pip-version-check "${SDK_WORKSPACE}"/dist/*.whl
-          cat > "${RELEASE_SMOKE_ROOT}/verify_release_wheel.py" <<'PY'
+          cat > "${RELEASE_SMOKE_ROOT}/verify_release_wheel.py" <<'PY_RELEASE_WHEEL'
           import importlib.metadata
           import json
           import os
@@ -124,10 +412,11 @@ jobs:
 
           workspace = Path(os.environ["SDK_WORKSPACE"]).resolve()
           expected_version = tomllib.loads((workspace / "pyproject.toml").read_text())["project"]["version"]
+          requested_version = os.environ["RELEASE_VERSION"]
           site_packages = Path(sysconfig.get_path("purelib")).resolve()
           distribution = importlib.metadata.distribution("platen-document")
+          assert requested_version == expected_version, "Requested version differs from pyproject.toml"
           assert sys.prefix != sys.base_prefix, "Release wheel must use a virtual environment"
-          assert os.environ["GITHUB_REF_NAME"] == f"v{expected_version}", "Release tag/version mismatch"
           assert distribution.version == expected_version, (distribution.version, expected_version)
           assert Path(distribution.locate_file("")).resolve().is_relative_to(site_packages)
           assert Path(platen_document.__file__).resolve().is_relative_to(site_packages)
@@ -156,7 +445,6 @@ jobs:
               assert type(MAX_RASTER_DPI) is int and MAX_RASTER_DPI == 600
               assert type(MAX_RASTER_AXIS) is int and MAX_RASTER_AXIS == 32_768
 
-          # Exercise the installed CLI without processing or rendering a document.
           assert main(["doctor"]) == 0
           for name, module in tuple(sys.modules.items()):
               if name == "platen_document" or name.startswith("platen_document."):
@@ -164,38 +452,427 @@ jobs:
                   if path:
                       assert Path(path).resolve().is_relative_to(site_packages), (name, path)
           print(f"Qualified release wheel {distribution.version}: {platen_document.__file__}")
-          PY
+          PY_RELEASE_WHEEL
           cd "${RELEASE_SMOKE_ROOT}"
           "${RELEASE_SMOKE_ROOT}/venv/bin/python" -I "${RELEASE_SMOKE_ROOT}/verify_release_wheel.py"
 
-      - name: Upload release distributions
-        uses: actions/upload-artifact@v4
+      - name: Prepare an identity and hash manifest for this release run
+        id: release_bundle
+        env:
+          RELEASE_VERSION: ${{ inputs.version }}
+          REVIEWED_COMMIT: ${{ inputs.reviewed_commit }}
+          RELEASE_RUN_ID: ${{ github.run_id }}
+          RELEASE_RUN_ATTEMPT: ${{ github.run_attempt }}
+          TAG_REF_OID: ${{ steps.release_preflight.outputs.tag_ref_oid }}
+        run: |
+          python - <<'PY_RELEASE_MANIFEST'
+          import hashlib
+          import json
+          import os
+          from pathlib import Path
+          import re
+          import shutil
+
+          version = os.environ["RELEASE_VERSION"]
+          if version != "0.1.9":
+              raise SystemExit("Only SDK 0.1.9 may be prepared for publication.")
+          run_id = int(os.environ["RELEASE_RUN_ID"])
+          attempt = int(os.environ["RELEASE_RUN_ATTEMPT"])
+          tag_ref_oid = os.environ["TAG_REF_OID"]
+          if not re.fullmatch(r"[0-9a-f]{40}", tag_ref_oid):
+              raise SystemExit("Invalid release tag identity in artifact preparation.")
+
+          source_dist = Path("dist")
+          wheel_name = f"platen_document-{version}-py3-none-any.whl"
+          sdist_name = f"platen_document-{version}.tar.gz"
+          expected = {wheel_name, sdist_name}
+          packages = [path for path in source_dist.iterdir() if path.is_file()]
+          if {path.name for path in packages} != expected or len(packages) != 2:
+              raise SystemExit("Build output did not contain exactly the expected wheel and sdist.")
+
+          bundle = Path("release-bundle")
+          bundle.mkdir()
+          bundle_dist = bundle / "dist"
+          bundle_dist.mkdir()
+          hashes = {}
+          for package in packages:
+              destination = bundle_dist / package.name
+              shutil.copyfile(package, destination)
+              hashes[package.name] = hashlib.sha256(destination.read_bytes()).hexdigest()
+
+          manifest = {
+              "schema_version": 1,
+              "repository": "gimesha-adikari/platen-document",
+              "workflow_run_id": run_id,
+              "workflow_run_attempt": attempt,
+              "version": version,
+              "reviewed_commit": os.environ["REVIEWED_COMMIT"],
+              "tag": f"v{version}",
+              "tag_ref_oid": tag_ref_oid,
+              "artifact_name": f"python-package-distributions-{run_id}-{attempt}",
+              "distributions": hashes,
+          }
+          (bundle / "release-manifest.json").write_text(
+              json.dumps(manifest, sort_keys=True, indent=2) + "\n",
+              encoding="utf-8",
+          )
+          print(f"Prepared {len(hashes)} distributions for run {run_id}, attempt {attempt}.")
+          PY_RELEASE_MANIFEST
+          echo "artifact_name=python-package-distributions-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" >> "$GITHUB_OUTPUT"
+
+      - name: Upload this run's qualified release bundle
+        id: upload_release
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # actions/upload-artifact v7.0.2
         with:
-          name: python-package-distributions-${{ github.run_id }}-${{ github.run_attempt }}
-          path: dist/*
+          name: ${{ steps.release_bundle.outputs.artifact_name }}
+          path: release-bundle
           if-no-files-found: error
           retention-days: 14
 
   publish:
-    name: Publish to PyPI
-    if: github.event_name == 'push' && github.ref_type == 'tag' && startsWith(github.ref, 'refs/tags/v')
+    name: Publish the verified release to PyPI
+    if: >-
+      ${{
+        github.event_name == 'workflow_dispatch' &&
+        github.ref == 'refs/heads/main' &&
+        github.actor == 'gimesha-adikari' &&
+        github.triggering_actor == 'gimesha-adikari' &&
+        needs.build.result == 'success'
+      }}
     needs: build
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     environment:
       name: pypi
       url: https://pypi.org/p/platen-document
     permissions:
+      actions: read
       contents: read
       id-token: write
 
     steps:
-      - name: Download release distributions
-        uses: actions/download-artifact@v4
+      - name: Download the exact release artifact from this build
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # actions/download-artifact v8.0.2
         with:
-          name: python-package-distributions-${{ github.run_id }}-${{ github.run_attempt }}
-          path: dist/
+          artifact-ids: ${{ needs.build.outputs.artifact_id }}
+          path: ${{ runner.temp }}/verified-release-artifact
+          digest-mismatch: error
+
+      - name: Revalidate publication authorization and artifact before upload
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GITHUB_API_URL: ${{ github.api_url }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          GITHUB_RUN_ID: ${{ github.run_id }}
+          GITHUB_RUN_ATTEMPT: ${{ github.run_attempt }}
+          RELEASE_EVENT_NAME: ${{ github.event_name }}
+          RELEASE_REF: ${{ github.ref }}
+          RELEASE_EVENT_SHA: ${{ github.sha }}
+          RELEASE_ACTOR: ${{ github.actor }}
+          RELEASE_TRIGGERING_ACTOR: ${{ github.triggering_actor }}
+          RELEASE_VERSION: ${{ inputs.version }}
+          REVIEWED_COMMIT: ${{ inputs.reviewed_commit }}
+          EXPECTED_ARTIFACT_ID: ${{ needs.build.outputs.artifact_id }}
+          EXPECTED_ARTIFACT_DIGEST: ${{ needs.build.outputs.artifact_digest }}
+          EXPECTED_TAG_REF_OID: ${{ needs.build.outputs.tag_ref_oid }}
+          ARTIFACT_DOWNLOAD_DIR: ${{ runner.temp }}/verified-release-artifact
+        run: |
+          python - <<'PY_PUBLICATION_GATE'
+          from datetime import UTC, datetime
+          import hashlib
+          import json
+          import os
+          from pathlib import Path
+          import re
+          import tomllib
+          import urllib.error
+          import urllib.request
+
+          REPOSITORY = "gimesha-adikari/platen-document"
+          OWNER_ACTOR = "gimesha-adikari"
+          SHA_RE = re.compile(r"^[0-9a-f]{40}$")
+          RAW_UPLOAD_DIGEST_RE = re.compile(r"[0-9a-f]{64}")
+
+          class ReleaseGateError(Exception):
+              pass
+
+          def fail(message):
+              raise ReleaseGateError(message)
+
+          def parse_version(value):
+              if not isinstance(value, str) or value != "0.1.9":
+                  fail("Only SDK 0.1.9 is authorized by this workflow.")
+              return value
+
+          def require_sha(value, label):
+              if not isinstance(value, str) or not SHA_RE.fullmatch(value):
+                  fail(f"{label} must be a lowercase 40-character Git commit ID.")
+              return value
+
+          def publication_context(env):
+              if env.get("RELEASE_EVENT_NAME") != "workflow_dispatch":
+                  fail("Only an explicit workflow_dispatch can publish.")
+              if env.get("RELEASE_REF") != "refs/heads/main":
+                  fail("Publication is allowed only from refs/heads/main.")
+              if env.get("GITHUB_REPOSITORY") != REPOSITORY:
+                  fail("Publication repository identity does not match.")
+              if env.get("RELEASE_ACTOR") != OWNER_ACTOR:
+                  fail("Release dispatch actor is not authorized.")
+              if env.get("RELEASE_TRIGGERING_ACTOR") != OWNER_ACTOR:
+                  fail("Release triggering actor, including any rerun actor, is not authorized.")
+              version = parse_version(env.get("RELEASE_VERSION"))
+              reviewed = require_sha(env.get("REVIEWED_COMMIT"), "Reviewed commit")
+              event_sha = require_sha(env.get("RELEASE_EVENT_SHA"), "Dispatch commit")
+              if reviewed != event_sha:
+                  fail("Reviewed commit and dispatch SHA must be identical.")
+              for key in ("GITHUB_RUN_ID", "GITHUB_RUN_ATTEMPT"):
+                  if not re.fullmatch(r"[1-9][0-9]*", env.get(key, "")):
+                      fail(f"{key} is missing or invalid.")
+              return {
+                  "version": version,
+                  "reviewed_commit": reviewed,
+                  "tag": f"v{version}",
+                  "run_id": int(env["GITHUB_RUN_ID"]),
+                  "run_attempt": int(env["GITHUB_RUN_ATTEMPT"]),
+              }
+
+          def github_api_get(path, token, api_url, opener=None):
+              if not path.startswith("/repos/"):
+                  fail("Publication gate attempted an unexpected GitHub API path.")
+              request = urllib.request.Request(
+                  api_url.rstrip("/") + path,
+                  headers={
+                      "Accept": "application/vnd.github+json",
+                      "Authorization": f"Bearer {token}",
+                      "X-GitHub-Api-Version": "2022-11-28",
+                  },
+              )
+              open_url = opener or urllib.request.urlopen
+              try:
+                  with open_url(request, timeout=20) as response:
+                      if response.status != 200:
+                          fail(f"GitHub API returned HTTP {response.status}.")
+                      return json.loads(response.read().decode("utf-8"))
+              except ReleaseGateError:
+                  raise
+              except urllib.error.HTTPError as error:
+                  raise ReleaseGateError(f"GitHub API returned HTTP {error.code}.") from None
+              except Exception:
+                  raise ReleaseGateError("GitHub API request failed; publication is blocked.") from None
+
+          def make_api_get(env):
+              token = env.get("GH_TOKEN", "")
+              api_url = env.get("GITHUB_API_URL", "")
+              if not token or not api_url:
+                  fail("Read-only GitHub API credentials are unavailable.")
+              return lambda path: github_api_get(path, token, api_url)
+
+          def decode_content(payload, label):
+              if payload.get("type") != "file" or payload.get("encoding") != "base64":
+                  fail(f"Could not read reviewed {label} from GitHub.")
+              try:
+                  import base64
+                  return base64.b64decode(payload["content"], validate=False).decode("utf-8")
+              except Exception:
+                  raise ReleaseGateError(f"Reviewed {label} was not valid UTF-8 file content.") from None
+
+          def read_repo_file(api_get, path, commit):
+              return decode_content(
+                  api_get(f"/repos/{REPOSITORY}/contents/{path}?ref={commit}"),
+                  path,
+              )
+
+          def resolve_tag(api_get, tag):
+              ref = api_get(f"/repos/{REPOSITORY}/git/ref/tags/{tag}")
+              if ref.get("ref") != f"refs/tags/{tag}":
+                  fail("Expected release tag reference is missing or unexpected.")
+              current = ref.get("object")
+              if not isinstance(current, dict):
+                  fail("Release tag reference has no Git object.")
+              top_oid = require_sha(current.get("sha"), "Release tag object")
+              seen = set()
+              top = True
+              for _ in range(10):
+                  object_type = current.get("type")
+                  object_sha = require_sha(current.get("sha"), "Release tag target")
+                  if object_sha in seen:
+                      fail("Release tag contains a cycle.")
+                  seen.add(object_sha)
+                  if object_type == "commit":
+                      return top_oid, object_sha
+                  if object_type != "tag":
+                      fail("Release tag must resolve to a Git commit.")
+                  tag_object = api_get(f"/repos/{REPOSITORY}/git/tags/{object_sha}")
+                  if top and tag_object.get("tag") != tag:
+                      fail("Annotated tag name does not match the requested release tag.")
+                  top = False
+                  current = tag_object.get("object")
+                  if not isinstance(current, dict):
+                      fail("Annotated release tag has no target object.")
+              fail("Release tag nesting exceeded the supported limit.")
+
+          def check_pypi_absent(version, opener=None):
+              request = urllib.request.Request(
+                  f"https://pypi.org/pypi/platen-document/{version}/json",
+                  headers={"Accept": "application/json"},
+              )
+              open_url = opener or urllib.request.urlopen
+              try:
+                  with open_url(request, timeout=15) as response:
+                      status = response.status
+              except urllib.error.HTTPError as error:
+                  status = error.code
+              except Exception:
+                  raise ReleaseGateError("PyPI availability could not be verified; publication is blocked.") from None
+              if status != 404:
+                  fail(f"PyPI returned HTTP {status}; only HTTP 404 permits a release.")
+
+          def sha256_file(path):
+              digest = hashlib.sha256()
+              with path.open("rb") as stream:
+                  for block in iter(lambda: stream.read(1024 * 1024), b""):
+                      digest.update(block)
+              return digest.hexdigest()
+
+          def verify_downloaded_bundle(root, context, tag_ref_oid):
+              root = Path(root)
+              if not root.is_dir() or root.is_symlink():
+                  fail("Downloaded release artifact directory is missing or unsafe.")
+              if {entry.name for entry in root.iterdir()} != {"dist", "release-manifest.json"}:
+                  fail("Downloaded release artifact contains unexpected files.")
+              manifest_path = root / "release-manifest.json"
+              dist = root / "dist"
+              if manifest_path.is_symlink() or not manifest_path.is_file():
+                  fail("Release artifact manifest is missing or unsafe.")
+              if dist.is_symlink() or not dist.is_dir():
+                  fail("Release artifact distribution directory is missing or unsafe.")
+              try:
+                  manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+              except Exception:
+                  raise ReleaseGateError("Release artifact manifest is not valid JSON.") from None
+
+              expected_name = f"python-package-distributions-{context['run_id']}-{context['run_attempt']}"
+              expected_wheel = f"platen_document-{context['version']}-py3-none-any.whl"
+              expected_sdist = f"platen_document-{context['version']}.tar.gz"
+              expected_files = {expected_wheel, expected_sdist}
+              if {entry.name for entry in dist.iterdir()} != expected_files:
+                  fail("Release artifact must contain exactly the expected wheel and source distribution.")
+              if any(entry.is_symlink() or not entry.is_file() for entry in dist.iterdir()):
+                  fail("Release artifact contains an unsafe distribution entry.")
+              expected_fields = {
+                  "schema_version",
+                  "repository",
+                  "workflow_run_id",
+                  "workflow_run_attempt",
+                  "version",
+                  "reviewed_commit",
+                  "tag",
+                  "tag_ref_oid",
+                  "artifact_name",
+                  "distributions",
+              }
+              if set(manifest) != expected_fields or manifest.get("schema_version") != 1:
+                  fail("Release artifact manifest schema is unexpected.")
+              identity = {
+                  "repository": REPOSITORY,
+                  "workflow_run_id": context["run_id"],
+                  "workflow_run_attempt": context["run_attempt"],
+                  "version": context["version"],
+                  "reviewed_commit": context["reviewed_commit"],
+                  "tag": context["tag"],
+                  "tag_ref_oid": tag_ref_oid,
+                  "artifact_name": expected_name,
+              }
+              if any(manifest.get(key) != value for key, value in identity.items()):
+                  fail("Release artifact manifest does not match this approved run.")
+              hashes = manifest.get("distributions")
+              if not isinstance(hashes, dict) or set(hashes) != expected_files:
+                  fail("Release artifact manifest does not identify the expected distributions.")
+              for name in expected_files:
+                  expected_hash = hashes.get(name)
+                  if not isinstance(expected_hash, str) or not re.fullmatch(r"[0-9a-f]{64}", expected_hash):
+                      fail("Release artifact contains an invalid distribution digest.")
+                  if sha256_file(dist / name) != expected_hash:
+                      fail("Release artifact distribution integrity check failed.")
+              return manifest
+
+          def publication_preflight(env, api_get, artifact_dir, pypi_check=None, opener=None):
+              context = publication_context(env)
+              project = api_get(f"/repos/{REPOSITORY}")
+              if project.get("full_name") != REPOSITORY or type(project.get("id")) is not int:
+                  fail("GitHub repository identity could not be verified.")
+              remote_project = tomllib.loads(
+                  read_repo_file(api_get, "pyproject.toml", context["reviewed_commit"])
+              )
+              if remote_project.get("project", {}).get("version") != context["version"]:
+                  fail("Approved release version no longer matches the reviewed pyproject.toml.")
+              main_ref = api_get(f"/repos/{REPOSITORY}/git/ref/heads/main")
+              if main_ref.get("object", {}).get("sha") != context["reviewed_commit"]:
+                  fail("Reviewed commit is no longer the current main release commit.")
+
+              artifact_id = env.get("EXPECTED_ARTIFACT_ID", "")
+              raw_upload_digest = env.get("EXPECTED_ARTIFACT_DIGEST", "")
+              if not re.fullmatch(r"[1-9][0-9]*", artifact_id):
+                  fail("Build artifact ID is missing or invalid.")
+              if not isinstance(raw_upload_digest, str) or not RAW_UPLOAD_DIGEST_RE.fullmatch(raw_upload_digest):
+                  fail("Build artifact digest is missing or invalid.")
+              # upload-artifact emits raw hex; the REST artifact schema includes the algorithm.
+              artifact_digest = f"sha256:{raw_upload_digest}"
+              artifact = api_get(f"/repos/{REPOSITORY}/actions/artifacts/{artifact_id}")
+              expected_name = f"python-package-distributions-{context['run_id']}-{context['run_attempt']}"
+              workflow_run = artifact.get("workflow_run", {})
+              if (
+                  str(artifact.get("id")) != artifact_id
+                  or artifact.get("name") != expected_name
+                  or artifact.get("digest") != artifact_digest
+                  or artifact.get("expired") is not False
+                  or type(artifact.get("size_in_bytes")) is not int
+                  or artifact.get("size_in_bytes") <= 0
+                  or workflow_run.get("id") != context["run_id"]
+                  or workflow_run.get("repository_id") != project["id"]
+                  or workflow_run.get("head_repository_id") != project["id"]
+                  or workflow_run.get("head_branch") != "main"
+                  or workflow_run.get("head_sha") != context["reviewed_commit"]
+              ):
+                  fail("GitHub artifact identity or archive digest does not match this build run.")
+
+              expected_tag_ref_oid = require_sha(
+                  env.get("EXPECTED_TAG_REF_OID"),
+                  "Build tag reference identity",
+              )
+              tag_ref_oid, tag_target = resolve_tag(api_get, context["tag"])
+              if tag_ref_oid != expected_tag_ref_oid or tag_target != context["reviewed_commit"]:
+                  fail("Release tag was moved, replaced, or no longer targets the reviewed commit.")
+              verify_downloaded_bundle(artifact_dir, context, tag_ref_oid)
+              (pypi_check or check_pypi_absent)(context["version"], opener=opener)
+              context["artifact_id"] = artifact_id
+              context["artifact_digest"] = artifact_digest
+              return context
+
+          def main():
+              env = os.environ
+              try:
+                  api_get = make_api_get(env)
+                  result = publication_preflight(
+                      env,
+                      api_get,
+                      env["ARTIFACT_DOWNLOAD_DIR"],
+                  )
+                  print(
+                      f"Publication gate passed for SDK {result['version']} "
+                      f"at {result['reviewed_commit']}; PyPI is still absent."
+                  )
+              except ReleaseGateError as error:
+                  raise SystemExit(str(error)) from None
+              except Exception:
+                  raise SystemExit("Publication gate failed closed.") from None
+
+          if __name__ == "__main__":
+              main()
+          PY_PUBLICATION_GATE
 
       - name: Publish with Trusted Publishing
-        uses: pypa/gh-action-pypi-publish@release/v1
+        uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33 # pypa/gh-action-pypi-publish v1.14.2
         with:
+          packages-dir: ${{ runner.temp }}/verified-release-artifact/dist
           attestations: true
