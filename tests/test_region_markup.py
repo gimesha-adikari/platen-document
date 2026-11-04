@@ -298,7 +298,11 @@ def test_multiple_overlapping_and_multipage_regions_are_independent(tmp_path: Pa
     assert result.regions[2].word_ids == ("page-1-word-0", "page-1-word-1")
     assert result.annotation_count == 3
     assert _annotation_types(output) == ["StrikeOut", "StrikeOut", "StrikeOut"]
-    assert _annotation_colors(output) == pytest.approx([(1, 0, 0), (0, 1, 0), (0, 0, 1)], abs=0.001)
+    expected_colors = [(1, 0, 0), (0, 1, 0), (0, 0, 1)]
+    actual_colors = _annotation_colors(output)
+    assert len(actual_colors) == len(expected_colors)
+    for actual, expected in zip(actual_colors, expected_colors, strict=True):
+        assert actual == pytest.approx(expected, abs=0.001)
 
 
 def test_empty_out_of_bounds_and_no_word_regions_are_reported(tmp_path: Path) -> None:
