@@ -1,0 +1,81 @@
+{
+  "artifact_scope": "synthetic fixtures only; no user PDF or source-derived page image",
+  "cases": {
+    "clean": {
+      "image_streams_preserved": true,
+      "neighbor_text_layer_preserved": true,
+      "neighbor_tokens_preserved": true,
+      "old_target_hits_in_target": 0,
+      "outside_changed_pixels_144dpi": 0,
+      "outside_changed_pixels_by_dpi": {
+        "144": 0,
+        "288": 0,
+        "72": 0
+      },
+      "replacement_hits_in_target": 1,
+      "replacement_ocr_hits_in_target": 1,
+      "source_hidden_target_present": false,
+      "status": "EDITED",
+      "unexpected_ocr_target_tokens": 0
+    },
+    "hidden_ocr": {
+      "image_streams_preserved": true,
+      "neighbor_text_layer_preserved": true,
+      "neighbor_tokens_preserved": true,
+      "old_target_hits_in_target": 0,
+      "outside_changed_pixels_144dpi": 0,
+      "outside_changed_pixels_by_dpi": {
+        "144": 0,
+        "288": 0,
+        "72": 0
+      },
+      "replacement_hits_in_target": 1,
+      "replacement_ocr_hits_in_target": 1,
+      "source_hidden_target_present": true,
+      "status": "EDITED",
+      "unexpected_ocr_target_tokens": 0
+    },
+    "lossy_skew": {
+      "image_streams_preserved": true,
+      "neighbor_text_layer_preserved": true,
+      "neighbor_tokens_preserved": true,
+      "old_target_hits_in_target": 0,
+      "outside_changed_pixels_144dpi": 0,
+      "outside_changed_pixels_by_dpi": {
+        "144": 0,
+        "288": 0,
+        "72": 0
+      },
+      "replacement_hits_in_target": 1,
+      "replacement_ocr_hits_in_target": 1,
+      "source_hidden_target_present": false,
+      "status": "EDITED",
+      "unexpected_ocr_target_tokens": 0
+    },
+    "stamp": {
+      "reason": "COLORED_OVERLAP",
+      "status": "REFUSED"
+    },
+    "table_border": {
+      "reason": "LINEAR_STRUCTURE_OVERLAP",
+      "status": "REFUSED"
+    },
+    "textured": {
+      "image_streams_preserved": true,
+      "neighbor_text_layer_preserved": true,
+      "neighbor_tokens_preserved": true,
+      "old_target_hits_in_target": 0,
+      "outside_changed_pixels_144dpi": 0,
+      "outside_changed_pixels_by_dpi": {
+        "144": 0,
+        "288": 0,
+        "72": 0
+      },
+      "replacement_hits_in_target": 1,
+      "replacement_ocr_hits_in_target": 1,
+      "source_hidden_target_present": false,
+      "status": "EDITED",
+      "unexpected_ocr_target_tokens": 0
+    }
+  }
+}
