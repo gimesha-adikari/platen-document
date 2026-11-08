@@ -89,6 +89,7 @@ def test_ocr_forces_visual_recognition_by_default(fake, capsys):
 
 
 def test_explicit_pages_are_one_based_and_do_not_require_full_document(fake, capsys):
+    fake.result.source.page_count = 4
     assert cli.main(["text", "a.pdf", "--pages", "1,3-4"]) == 0
     assert fake.calls[0][2]["page_indices"] == (0, 2, 3)
     assert not any(call[0] == "render_text" for call in fake.calls)
@@ -138,6 +139,40 @@ def test_regions_support_manual_geometry_and_json_file(fake, tmp_path):
     assert fake.calls[1][-1]["regions"][0].color == (0.0, 1.0, 0.0)
 
 
+def test_invalid_region_json_reports_missing_rect_coordinate(fake, tmp_path, capsys):
+    region_path = tmp_path / "regions.json"
+    region_path.write_text(json.dumps({"regions": [{"page_number": 1, "rect": {"x": 4, "width": 6, "height": 7}}]}))
+
+    assert cli.main([
+        "regions", "a.pdf", str(tmp_path / "out.pdf"), "--action", "highlight",
+        "--mode", "manual", "--regions-file", str(region_path),
+    ]) == 1
+    error = capsys.readouterr().err.lower()
+    assert "region 0" in error
+    assert "y" in error
+    assert "x, y, width, height" in error
+    assert not fake.calls
+
+
+def test_out_of_bounds_region_returns_nonzero_with_result_metadata(fake, tmp_path, capsys, monkeypatch):
+    monkeypatch.setattr(
+        fake,
+        "apply_markup_regions",
+        lambda *_args, **_kwargs: SimpleNamespace(
+            regions=[SimpleNamespace(status="out_of_bounds")],
+            to_dict=lambda: {"annotation_count": 0, "regions": [{"status": "out_of_bounds"}]},
+        ),
+    )
+
+    assert cli.main([
+        "regions", "a.pdf", str(tmp_path / "out.pdf"), "--action", "highlight",
+        "--mode", "manual", "--region", "2:10,10,20,20",
+    ]) == 1
+    captured = capsys.readouterr()
+    assert json.loads(captured.out)["regions"][0]["status"] == "out_of_bounds"
+    assert "out of bounds" in captured.err.lower()
+
+
 def test_invalid_color_returns_error(fake, tmp_path, capsys):
     assert cli.main(["markup", "a.pdf", str(tmp_path / "out.pdf"), "--action", "highlight", "--query", "x", "--color", "1,2,3"]) == 1
     assert "color" in capsys.readouterr().err.lower()
@@ -152,3 +187,11 @@ def test_capabilities_command_uses_processor(fake, capsys):
 def test_bad_pages_return_error(fake, capsys):
     assert cli.main(["ocr", "file.pdf", "--pages", "0"]) == 1
     assert "positive" in capsys.readouterr().err
+
+
+def test_page_selection_beyond_source_page_count_returns_error(fake, capsys):
+    assert cli.main(["text", "source.pdf", "--pages", "2"]) == 1
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert "page 2" in captured.err.lower()
+    assert "1 page" in captured.err.lower()
