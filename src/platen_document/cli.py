@@ -254,6 +254,14 @@ def _regions(args: argparse.Namespace) -> tuple[MarkupRegion, ...]:
         rect = item.get("rect", item)
         if not isinstance(rect, dict):
             raise ValueError(f"region {index} rect must be an object with x, y, width, height")
+        missing_coordinates = tuple(key for key in ("x", "y", "width", "height") if key not in rect)
+        if missing_coordinates:
+            missing = ", ".join(missing_coordinates)
+            raise ValueError(
+                f"region {index} rect is missing coordinate(s): {missing}; expected x, y, width, height"
+            )
+        if "page_number" not in item:
+            raise ValueError(f"region {index} is missing required page_number")
         value = item.get("color", default_color)
         color = _color(value) if isinstance(value, str) else tuple(value)
         regions.append(MarkupRegion(
@@ -307,12 +315,23 @@ def run(args: argparse.Namespace) -> int:
     language = _language_kwargs(args)
     progress = _progress if getattr(args, "progress", False) else None
     if args.command in ("text", "ocr"):
+        page_indices = _pages(args.pages)
         result = processor.extract_text(
             args.input, password=_password(args), **language,
             profile=OCRProfile(args.profile), routing_policy=args.routing_policy,
             page_timeout_seconds=args.page_timeout, page_progress_callback=progress,
-            page_indices=_pages(args.pages),
+            page_indices=page_indices,
         )
+        if page_indices is not None:
+            page_count = result.source.page_count
+            out_of_range = tuple(index + 1 for index in page_indices if index >= page_count)
+            if out_of_range:
+                requested = ", ".join(str(page) for page in out_of_range)
+                suffix = "" if len(out_of_range) == 1 else "s"
+                raise ValueError(
+                    f"--pages selects page{suffix} {requested}, but the PDF has {page_count} page"
+                    f"{'s' if page_count != 1 else ''}"
+                )
         if args.format == "json":
             _write(_json(result.to_dict()), args.output)
         elif args.pages is not None:
@@ -369,6 +388,14 @@ def run(args: argparse.Namespace) -> int:
         if args.result_json:
             _write(_json(data), args.result_json)
         _write(_json(data), None)
+        invalid_statuses = {
+            str(getattr(getattr(region, "status", None), "value", getattr(region, "status", "")))
+            for region in getattr(result, "regions", ())
+        } & {"empty", "out_of_bounds"}
+        if invalid_statuses:
+            statuses = ", ".join(status.replace("_", " ") for status in sorted(invalid_statuses))
+            print(f"platen-document: one or more regions are {statuses}; see result metadata", file=sys.stderr)
+            return 1
         return 0
 
     raise ValueError(f"unsupported command: {args.command}")
