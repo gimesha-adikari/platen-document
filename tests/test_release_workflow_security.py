@@ -56,7 +56,7 @@ class FakeGitHub:
     def __init__(self) -> None:
         self.calls: list[str] = []
         self.main_sha = COMMIT
-        self.version = "0.1.9"
+        self.version = "0.1.10"
         self.workflows = [
             {
                 "id": CI_WORKFLOW_ID,
@@ -89,7 +89,7 @@ class FakeGitHub:
         ]
         self.tag_ref_oid = TAG_REF_OID
         self.tag_target = COMMIT
-        self.tag_object_name = "v0.1.9"
+        self.tag_object_name = "v0.1.10"
         self.tag_object_type = "commit"
         self.artifact = {
             "id": 777,
@@ -128,9 +128,9 @@ class FakeGitHub:
             return {"id": 1352748673, "full_name": REPOSITORY}
         if path == f"/repos/{REPOSITORY}/git/ref/heads/main":
             return {"ref": "refs/heads/main", "object": {"sha": self.main_sha, "type": "commit"}}
-        if path == f"/repos/{REPOSITORY}/git/ref/tags/v0.1.9":
+        if path == f"/repos/{REPOSITORY}/git/ref/tags/v0.1.10":
             return {
-                "ref": "refs/tags/v0.1.9",
+                "ref": "refs/tags/v0.1.10",
                 "object": {"sha": self.tag_ref_oid, "type": "tag"},
             }
         if path == f"/repos/{REPOSITORY}/git/tags/{self.tag_ref_oid}":
@@ -169,7 +169,7 @@ def _env(**overrides: str) -> dict[str, str]:
         "RELEASE_ACTOR": "gimesha-adikari",
         "RELEASE_TRIGGERING_ACTOR": "gimesha-adikari",
         "GITHUB_REPOSITORY": REPOSITORY,
-        "RELEASE_VERSION": "0.1.9",
+        "RELEASE_VERSION": "0.1.10",
         "REVIEWED_COMMIT": COMMIT,
         "GITHUB_RUN_ID": "12345",
         "GITHUB_RUN_ATTEMPT": "1",
@@ -187,7 +187,7 @@ def _do_preflight(
     github = github or FakeGitHub()
     return BUILD_GATE["release_preflight"](
         env or _env(),
-        "0.1.9",
+        "0.1.10",
         COMMIT,
         github,
         pypi_check=pypi_check or (lambda version, opener=None: None),
@@ -195,7 +195,7 @@ def _do_preflight(
     )
 
 
-def _write_artifact_bundle(tmp_path: Path, *, version: str = "0.1.9") -> dict[str, object]:
+def _write_artifact_bundle(tmp_path: Path, *, version: str = "0.1.10") -> dict[str, object]:
     bundle = tmp_path / "artifact"
     dist = bundle / "dist"
     dist.mkdir(parents=True)
@@ -340,12 +340,12 @@ def test_publish_condition_requires_authorized_dispatch_and_successful_build() -
         {"RELEASE_EVENT_NAME": "release"},
         {"RELEASE_EVENT_NAME": "schedule"},
         {"RELEASE_REF": "refs/heads/feature/release"},
-        {"RELEASE_REF": "refs/tags/v0.1.9"},
+        {"RELEASE_REF": "refs/tags/v0.1.10"},
         {"RELEASE_ACTOR": "external-contributor"},
         {"RELEASE_TRIGGERING_ACTOR": "external-contributor"},
         {"RELEASE_VERSION": "0.1.8"},
-        {"RELEASE_VERSION": "v0.1.9"},
-        {"RELEASE_VERSION": "0.1.9;echo unsafe"},
+        {"RELEASE_VERSION": "v0.1.10"},
+        {"RELEASE_VERSION": "0.1.10;echo unsafe"},
         {"REVIEWED_COMMIT": "d" * 40},
         {"RELEASE_EVENT_SHA": "d" * 40},
         {"GITHUB_REPOSITORY": "someone-else/platen-document"},
@@ -361,7 +361,7 @@ def test_build_preflight_rejects_checked_out_or_current_main_mismatch() -> None:
     with pytest.raises(BUILD_GATE["ReleaseGateError"]):
         BUILD_GATE["release_preflight"](
             _env(),
-            "0.1.9",
+            "0.1.10",
             "d" * 40,
             github,
             pypi_check=lambda version, opener=None: None,
@@ -373,7 +373,7 @@ def test_build_preflight_rejects_checked_out_or_current_main_mismatch() -> None:
     with pytest.raises(BUILD_GATE["ReleaseGateError"]):
         BUILD_GATE["release_preflight"](
             _env(),
-            "0.1.9",
+            "0.1.10",
             COMMIT,
             github,
             pypi_check=lambda version, opener=None: None,
@@ -383,32 +383,32 @@ def test_build_preflight_rejects_checked_out_or_current_main_mismatch() -> None:
 
 def test_preflight_accepts_only_exact_sdk_ci_and_current_installed_wheel_suite() -> None:
     result = _do_preflight()
-    assert result["version"] == "0.1.9"
+    assert result["version"] == "0.1.10"
     assert result["reviewed_commit"] == COMMIT
-    assert result["tag"] == "v0.1.9"
+    assert result["tag"] == "v0.1.10"
     assert result["tag_ref_oid"] == TAG_REF_OID
 
 
 @pytest.mark.parametrize(
     "version",
     [
-        "0.1.8", "0.1.10", "0.2.0", "1.0.0", "999.999.999",
-        "0.1.9rc1", "0.1.9.dev1", "0.1.9.post1", "0.1.9+local",
-        "", "v0.1.9", "00.1.9", "0.1", " 0.1.9", "0.1.9\n",
-        "0.1.9;echo unsafe", "$(echo 0.1.9)", "`echo 0.1.9`", None, True, 19,
+        "0.1.8", "0.1.9", "0.2.0", "1.0.0", "999.999.999",
+        "0.1.10rc1", "0.1.10.dev1", "0.1.10.post1", "0.1.10+local",
+        "", "v0.1.10", "00.1.10", "0.1", " 0.1.10", "0.1.10\n",
+        "0.1.10;echo unsafe", "$(echo 0.1.10)", "`echo 0.1.10`", None, True, 19,
     ],
 )
 @pytest.mark.parametrize("gate", [BUILD_GATE, PUBLISH_GATE], ids=["build", "publish"])
-def test_only_019_is_eligible_even_if_declared_version_matches(gate, version) -> None:
+def test_only_0110_is_eligible_even_if_declared_version_matches(gate, version) -> None:
     env = _env(RELEASE_VERSION=version)
-    with pytest.raises(gate["ReleaseGateError"], match="Only SDK 0.1.9"):
+    with pytest.raises(gate["ReleaseGateError"], match="Only SDK 0.1.10"):
         if gate is BUILD_GATE:
             gate["validate_context"](env, version, COMMIT)
         else:
             gate["publication_context"](env)
 
 
-@pytest.mark.parametrize("declared_version", ["0.1.8", "0.1.10"])
+@pytest.mark.parametrize("declared_version", ["0.1.8", "0.1.9"])
 def test_publish_requested_version_must_equal_reviewed_pyproject(
     tmp_path: Path, declared_version: str
 ) -> None:
@@ -465,7 +465,7 @@ def test_preflight_fails_closed_if_current_raster_suite_or_file_is_missing() -> 
     with pytest.raises(BUILD_GATE["ReleaseGateError"]):
         BUILD_GATE["release_preflight"](
             _env(),
-            "0.1.9",
+            "0.1.10",
             COMMIT,
             missing_ci_script,
             pypi_check=lambda version, opener=None: None,
@@ -475,7 +475,7 @@ def test_preflight_fails_closed_if_current_raster_suite_or_file_is_missing() -> 
 
 def test_preflight_fails_closed_for_missing_or_mismatched_release_tag() -> None:
     github = FakeGitHub()
-    github.missing.add(f"/repos/{REPOSITORY}/git/ref/tags/v0.1.9")
+    github.missing.add(f"/repos/{REPOSITORY}/git/ref/tags/v0.1.10")
     with pytest.raises(BUILD_GATE["ReleaseGateError"]):
         _do_preflight(github=github)
 
@@ -505,14 +505,14 @@ def test_preflight_peels_nested_annotated_tags_and_records_top_level_oid() -> No
 
     def nested_tag(path: str):
         if path == f"/repos/{REPOSITORY}/git/tags/{TAG_REF_OID}":
-            return {"tag": "v0.1.9", "object": {"sha": second_oid, "type": "tag"}}
+            return {"tag": "v0.1.10", "object": {"sha": second_oid, "type": "tag"}}
         if path == f"/repos/{REPOSITORY}/git/tags/{second_oid}":
             return {"tag": "inner", "object": {"sha": COMMIT, "type": "commit"}}
         return original(path)
 
     result = BUILD_GATE["release_preflight"](
         _env(),
-        "0.1.9",
+        "0.1.10",
         COMMIT,
         nested_tag,
         pypi_check=lambda version, opener=None: None,
@@ -536,7 +536,7 @@ class _Response:
 def test_pypi_anything_other_than_404_blocks(status: int) -> None:
     for script in (BUILD_GATE, PUBLISH_GATE):
         with pytest.raises(script["ReleaseGateError"]):
-            script["check_pypi_absent"]("0.1.9", opener=lambda request, timeout: _Response(status))
+            script["check_pypi_absent"]("0.1.10", opener=lambda request, timeout: _Response(status))
 
 
 def test_pypi_connection_failure_blocks() -> None:
@@ -545,12 +545,12 @@ def test_pypi_connection_failure_blocks() -> None:
 
     for script in (BUILD_GATE, PUBLISH_GATE):
         with pytest.raises(script["ReleaseGateError"]):
-            script["check_pypi_absent"]("0.1.9", opener=unavailable)
+            script["check_pypi_absent"]("0.1.10", opener=unavailable)
 
 
 def test_pypi_only_404_allows_absence() -> None:
     for script in (BUILD_GATE, PUBLISH_GATE):
-        script["check_pypi_absent"]("0.1.9", opener=lambda request, timeout: _Response(404))
+        script["check_pypi_absent"]("0.1.10", opener=lambda request, timeout: _Response(404))
 
 
 def test_pypi_http_error_404_is_the_only_registry_error_that_allows_absence() -> None:
@@ -561,10 +561,10 @@ def test_pypi_http_error_404_is_the_only_registry_error_that_allows_absence() ->
         return opener
 
     for script in (BUILD_GATE, PUBLISH_GATE):
-        script["check_pypi_absent"]("0.1.9", opener=raise_status(404))
+        script["check_pypi_absent"]("0.1.10", opener=raise_status(404))
         for status in (200, 429, 500, 503):
             with pytest.raises(script["ReleaseGateError"]):
-                script["check_pypi_absent"]("0.1.9", opener=raise_status(status))
+                script["check_pypi_absent"]("0.1.10", opener=raise_status(status))
 
 
 def test_build_preflight_calls_pypi_absence_check_only_after_all_gates() -> None:
@@ -580,7 +580,7 @@ def test_build_preflight_calls_pypi_absence_check_only_after_all_gates() -> None
 
     BUILD_GATE["release_preflight"](
         _env(),
-        "0.1.9",
+        "0.1.10",
         COMMIT,
         api,
         pypi_check=pypi_check,
@@ -611,7 +611,7 @@ def test_publish_preflight_revalidates_main_tag_artifact_and_pypi_before_boundar
     )
     assert result["reviewed_commit"] == COMMIT
     assert result["artifact_id"] == "777"
-    assert result["version"] == "0.1.9"
+    assert result["version"] == "0.1.10"
     assert result["artifact_digest"] == "sha256:" + UPLOAD_ARTIFACT_DIGEST
     assert events[-1] == "pypi-absence-check"
     assert "Publish with Trusted Publishing" in WORKFLOW_PATH.read_text()
@@ -663,7 +663,7 @@ def test_publish_rejects_missing_rest_artifact_metadata(tmp_path: Path, field: s
     "overrides",
     [
         {"RELEASE_EVENT_NAME": "push"},
-        {"RELEASE_REF": "refs/tags/v0.1.9"},
+        {"RELEASE_REF": "refs/tags/v0.1.10"},
         {"RELEASE_REF": "refs/heads/release-candidate"},
         {"RELEASE_ACTOR": "external-contributor"},
         {"RELEASE_TRIGGERING_ACTOR": "external-contributor"},

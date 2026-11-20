@@ -8,7 +8,7 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: SDK 0.1.9 only; must match pyproject.toml
+        description: SDK 0.1.10 only; must match pyproject.toml
         required: true
         type: string
       reviewed_commit:
@@ -95,8 +95,8 @@ jobs:
               raise ReleaseGateError(message)
 
           def parse_version(value):
-              if not isinstance(value, str) or value != "0.1.9":
-                  fail("Only SDK 0.1.9 is authorized by this workflow.")
+              if not isinstance(value, str) or value != "0.1.10":
+                  fail("Only SDK 0.1.10 is authorized by this workflow.")
               return value
 
           def require_sha(value, label):
@@ -300,7 +300,7 @@ jobs:
               if step_results.get(CI_WHEEL_STEP) != "success":
                   fail("The reviewed installed-wheel security qualification did not succeed.")
               if step_results.get(CI_CANDIDATE_STEP) != "skipped":
-                  fail("SDK 0.1.9+ CI must use its own wheel and raster suite, not the old candidate.")
+                  fail("SDK 0.1.10+ CI must use its own wheel and raster suite, not the old candidate.")
 
           def check_pypi_absent(version, opener=None):
               request = urllib.request.Request(
@@ -427,7 +427,7 @@ jobs:
           if direct_url:
               assert not json.loads(direct_url).get("dir_info", {}).get("editable", False)
 
-          if expected_version == "0.1.9":
+          if expected_version == "0.1.10":
               from platen_document import ConfigurationError, RasterAdmissionError
               from platen_document.engine.errors import (
                   ConfigurationError as EngineConfigurationError,
@@ -474,8 +474,8 @@ jobs:
           import shutil
 
           version = os.environ["RELEASE_VERSION"]
-          if version != "0.1.9":
-              raise SystemExit("Only SDK 0.1.9 may be prepared for publication.")
+          if version != "0.1.10":
+              raise SystemExit("Only SDK 0.1.10 may be prepared for publication.")
           run_id = int(os.environ["RELEASE_RUN_ID"])
           attempt = int(os.environ["RELEASE_RUN_ATTEMPT"])
           tag_ref_oid = os.environ["TAG_REF_OID"]
@@ -600,8 +600,8 @@ jobs:
               raise ReleaseGateError(message)
 
           def parse_version(value):
-              if not isinstance(value, str) or value != "0.1.9":
-                  fail("Only SDK 0.1.9 is authorized by this workflow.")
+              if not isinstance(value, str) or value != "0.1.10":
+                  fail("Only SDK 0.1.10 is authorized by this workflow.")
               return value
 
           def require_sha(value, label):
